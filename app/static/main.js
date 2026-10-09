@@ -1,10 +1,13 @@
 
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { setupStreetMap, updateStreetNetwork, renderStreetFrame, focusStreetSignal,
+         fitStreetRoute, searchRoutePoints, goToSearchResult,
+         invalidateStreetMap } from "./map.js";
 
 const $ = (id) => document.getElementById(id);
 const ids = ["hour","rain","speed","demand","sideTraffic"];
-const state = { inventory:null, observations:null, engineChosen:false, promoted:false, network:null, simulation:null, comparison:null, overrides:{}, playing:true, frame:0, lastTick:0, renderer:null, scene:null, controls:null, camera:null, cars:new Map(), lights:[], road:null, path:null, rain:null };
+const state = { viewMode:"map", inventory:null, observations:null, engineChosen:false, promoted:false, network:null, simulation:null, comparison:null, overrides:{}, playing:true, frame:0, lastTick:0, renderer:null, scene:null, controls:null, camera:null, cars:new Map(), lights:[], road:null, path:null, rain:null };
 const SCALE = 8;
 const palette = [0x63d7c2,0x92b6fc,0xf1c370,0xd0dce9,0xdd858d,0x95c9dd];
 
@@ -46,6 +49,7 @@ async function getNetwork(){
   $("sourceChip").textContent=$("engine").value==="sumo"?"SUMO · OSM generato":state.network.source==="openstreetmap"?"OSM · non verificato":"Demo sintetica";
   $("networkNote").textContent=state.network.quality+" · "+Math.round(state.network.length_m/100)/10+" km";
   state.overrides={};
+  state.path=worldPath();
   state.inventory=null;
   if($("engine").value==="sumo"){
     try{state.inventory=await api("/api/signals/inventory");}
@@ -53,6 +57,7 @@ async function getNetwork(){
   }
   renderSignalEvidence();
   renderSettings();
+  updateStreetNetwork(state.network,state.inventory);
   drawNetwork();
 }
 function makeEl(tag,text,cls){
@@ -228,6 +233,9 @@ function drawNetwork(){
   for(const c of state.cars.values())state.scene.remove(c);state.cars.clear();
 }
 function focusSignal(sig){
+  if(state.viewMode!=="3d"){
+    focusStreetSignal(sig);return;
+  }
   if(!state.controls)return;
   const pos=positionAt(sig.s_m).point;state.controls.target.copy(pos);
   state.camera.position.copy(pos).add(new THREE.Vector3(35,45,55));state.controls.update();
@@ -257,8 +265,11 @@ function setup3D(){
     state.scene=scene;state.camera=camera;state.renderer=renderer;state.controls=controls;
     const resize=()=>{if(!host.clientWidth||!host.clientHeight)return;renderer.setSize(host.clientWidth,host.clientHeight);camera.aspect=host.clientWidth/host.clientHeight;camera.updateProjectionMatrix();};
     new ResizeObserver(resize).observe(host);resize();
-    requestAnimationFrame(tick);
-  }catch(error){$("renderError").hidden=false;flash("Renderer 3D non disponibile: "+error.message,true);}
+  }catch(error){
+    $("renderError").hidden=false;
+    flash("Renderer 3D non disponibile: "+error.message+". Puoi continuare con la mappa.",true);
+    setViewMode("map");
+  }
 }
 function makeCar(id,direction){
   const group=new THREE.Group();
@@ -270,8 +281,10 @@ function makeCar(id,direction){
   state.scene.add(group);return group;
 }
 function showFrame(i){
-  const sim=state.simulation;if(!sim||!state.path)return;
+  const sim=state.simulation;if(!sim||!state.network)return;
   const frame=sim.frames[i];if(!frame)return;
+  if(state.viewMode==="map")renderStreetFrame(frame,sim.engine);
+  if(state.scene && state.road){
   const present=new Set();
   for(const row of frame.cars){
     const id=row[0], direction=row[1], lane=row[2], distance=row[3];
@@ -299,6 +312,7 @@ function showFrame(i){
     const lights=state.lights[index];if(!lights)return;
     for(let j=0;j<3;j++)lights[j].material.emissiveIntensity=j===({red:0,amber:1,green:2}[aspect])?1.8:0;
   });
+  }
   $("timeline").value=i;
   $("clock").textContent=String(Math.floor(frame.t/60)).padStart(2,"0")+":"+String(frame.t%60).padStart(2,"0");
 }
@@ -321,9 +335,15 @@ function tick(now){
       pos.needsUpdate=true;
     }
   }
-  state.controls.update();state.renderer.render(state.scene,state.camera);
+  if(state.viewMode==="3d" && state.controls && state.renderer){
+    state.controls.update();state.renderer.render(state.scene,state.camera);
+  }
 }
-function formatSeconds(x){return x==null?"—":Math.round(x)+" s";}
+function formatSeconds(x){
+  if(x==null)return "—";
+  const s=Math.round(x);
+  return s>=60?Math.floor(s/60)+" min "+String(s%60).padStart(2,"0")+" s":s+" s";
+}
 function metricsUI(m){
   $("travelKpi").textContent=formatSeconds(m.avg_travel_s);
   $("delayKpi").textContent=formatSeconds(m.avg_delay_s);
@@ -405,6 +425,8 @@ async function run(){
     state.simulation=sim;state.frame=0;state.playing=true;state.lastTick=0;
     $("timeline").max=Math.max(0,sim.frames.length-1);
     metricsUI(sim.metrics);queueChart();showFrame(0);
+    $("resultsSheet").classList.add("has-results");
+    if(window.innerWidth<=810)closeMobilePanel();
     flash("Simulazione completata · "+sim.metrics.inserted+" veicoli inseriti. Modello ipotetico, non traffico live.");
   }catch(e){flash(e.message,true);}
   finally{$("runBtn").disabled=false;}
@@ -542,10 +564,106 @@ async function getWeather(){
     flash("Precipitazioni storiche da Open-Meteo: "+rain+" mm/h. Il traffico è ancora sintetico.");
   }catch(e){flash(e.message,true);}
 }
+/* A small navigator-like workflow without geocoding or Google Maps APIs.
+   Search only matches georeferenced features already present in the study network. */
+function setViewMode(mode){
+  if(!["map","3d"].includes(mode))return;
+  state.viewMode=mode;
+  $("streetMap").hidden=mode!=="map";
+  $("scene").hidden=mode!=="3d";
+  $("view2DBtn").classList.toggle("active",mode==="map");
+  $("view3DBtn").classList.toggle("active",mode==="3d");
+  $("view2DBtn").setAttribute("aria-pressed",String(mode==="map"));
+  $("view3DBtn").setAttribute("aria-pressed",String(mode==="3d"));
+  $("mapZoomIn").disabled=mode!=="map";
+  $("mapZoomOut").disabled=mode!=="map";
+  $("fitRouteBtn").disabled=mode!=="map";
+  $("signalsToggleBtn").disabled=mode!=="map";
+  if(mode==="3d" && !state.scene){
+    setup3D();
+    if(state.network)drawNetwork();
+  }
+  if(state.simulation)showFrame(Math.min(state.frame,state.simulation.frames.length-1));
+  if(mode==="map")invalidateStreetMap();
+}
+function closeMobilePanel(){
+  $("controlPanel").classList.remove("is-open");
+  $("mobilePanelToggle").setAttribute("aria-expanded","false");
+}
+function updateTimePresets(){
+  for(const button of document.querySelectorAll("[data-time]")){
+    const selected=Number(button.dataset.time)===Number($("hour").value);
+    button.classList.toggle("active",selected);
+    button.setAttribute("aria-pressed",String(selected));
+  }
+}
+function renderSearchResults(){
+  const root=$("searchResults");
+  root.replaceChildren();
+  const query=$("mapSearch").value.trim();
+  if(!query){root.hidden=true;return [];}
+  const results=searchRoutePoints(query);
+  if(!results.length){
+    root.append(makeEl("div","Nessun incrocio nel tratto selezionato. Cerca tra i semafori della rete caricata.","search-empty"));
+  }else for(const result of results){
+    const button=makeEl("button",result.label);
+    button.type="button";button.setAttribute("role","option");
+    button.addEventListener("click",()=>{
+      setViewMode("map");goToSearchResult(result);
+      $("mapSearch").value=result.label;root.hidden=true;
+    });
+    root.append(button);
+  }
+  root.hidden=false;
+  return results;
+}
+function setupMapInteractions(){
+  $("view2DBtn").addEventListener("click",()=>setViewMode("map"));
+  $("view3DBtn").addEventListener("click",()=>setViewMode("3d"));
+  $("mapSearch").addEventListener("input",renderSearchResults);
+  $("searchBtn").addEventListener("click",()=>{
+    const results=renderSearchResults();
+    if(results.length===1){setViewMode("map");goToSearchResult(results[0]);$("searchResults").hidden=true;}
+  });
+  $("mapSearch").addEventListener("keydown",(event)=>{
+    if(event.key==="Escape")$("searchResults").hidden=true;
+    if(event.key==="Enter"){
+      event.preventDefault();
+      const matches=renderSearchResults();
+      if(matches.length){setViewMode("map");goToSearchResult(matches[0]);$("mapSearch").value=matches[0].label;$("searchResults").hidden=true;}
+    }
+  });
+  for(const preset of document.querySelectorAll("[data-time]")){
+    preset.addEventListener("click",()=>{
+      $("hour").value=preset.dataset.time;
+      syncLabels();updateTimePresets();
+      refreshObservationHour().catch(()=>{});
+    });
+  }
+  $("hour").addEventListener("input",updateTimePresets);
+  updateTimePresets();
+  $("mobileRunBtn").addEventListener("click",()=>$("runBtn").click());
+  $("mobilePanelToggle").addEventListener("click",()=>{
+    const open=$("controlPanel").classList.toggle("is-open");
+    $("mobilePanelToggle").setAttribute("aria-expanded",String(open));
+  });
+  window.addEventListener("keydown",(event)=>{
+    if(event.key==="Escape")closeMobilePanel();
+  });
+  $("mode").addEventListener("change",()=>{
+    // Selecting a policy does not silently run or modify a completed experiment.
+    if(state.simulation)flash("Strategia aggiornata. Premi «Avvia simulazione» per applicarla.");
+  });
+  // Expose the source distinction where people first see the map.
+  setViewMode("map");
+}
 function init(){
   const now=new Date();
   $("day").value=[now.getFullYear(),String(now.getMonth()+1).padStart(2,"0"),String(now.getDate()).padStart(2,"0")].join("-");
-  syncLabels();setup3D();
+  syncLabels();
+  setupStreetMap((signal)=>focusSignal(signal));
+  setupMapInteractions();
+  requestAnimationFrame(tick);
   $("engine").addEventListener("change",async()=>{
     state.engineChosen=true;
     try{
@@ -592,6 +710,9 @@ function init(){
   $("playPause").addEventListener("click",()=>{state.playing=!state.playing;$("playPause").textContent=state.playing?"Ⅱ":"▶";});
   $("timeline").addEventListener("input",()=>{state.frame=+$("timeline").value;state.playing=false;$("playPause").textContent="▶";showFrame(state.frame);});
   window.addEventListener("resize",queueChart);
+  $("analysisDetails").addEventListener("toggle",()=>{
+    if($("analysisDetails").open)requestAnimationFrame(queueChart);
+  });
   getNetwork().then(run).then(()=>refreshSumoStatus()).catch(err=>flash(err.message,true));
 }
 init();

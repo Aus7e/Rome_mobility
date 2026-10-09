@@ -15,6 +15,7 @@ jobs:
       - run: python -m compileall -q app scripts tests
       - run: pytest -q
       - run: node --input-type=module --check < app/static/main.js
+      - run: node --input-type=module --check < app/static/map.js
 
   sumo-integration:
     runs-on: ubuntu-latest
@@ -48,6 +49,10 @@ jobs:
           done
           curl -fsS http://127.0.0.1:18000/health | grep '"ok":true'
           curl -fsSI http://127.0.0.1:18000/static/vendor/three.module.js
+          curl -fsSI http://127.0.0.1:18000/static/vendor/leaflet/leaflet.js
+          curl -fsSI http://127.0.0.1:18000/static/vendor/leaflet/leaflet.css
+          curl -fsS http://127.0.0.1:18000/ | grep 'id="streetMap"'
+          curl -fsS http://127.0.0.1:18000/ | grep 'id="runBtn"'
           curl -fsSI http://127.0.0.1:18000/static/vendor/addons/controls/OrbitControls.js
           curl -fsS http://127.0.0.1:18000/ | grep '/static/vendor/three.module.js'
           docker exec salaria-ci sh -c 'test -f "$SUMO_HOME/data/typemap/osmNetconvert.typ.xml"'
