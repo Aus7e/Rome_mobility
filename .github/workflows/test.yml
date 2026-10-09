@@ -17,6 +17,8 @@ jobs:
 
   sumo-integration:
     runs-on: ubuntu-latest
+    env:
+      SUMO_HOME: /usr/share/sumo
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4

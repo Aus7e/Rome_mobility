@@ -2,6 +2,8 @@
 FROM python:3.12-slim-bookworm
 RUN apt-get update && apt-get install -y --no-install-recommends sumo sumo-tools \
     && rm -rf /var/lib/apt/lists/*
+ENV SUMO_HOME=/usr/share/sumo
+RUN test -f "$SUMO_HOME/data/typemap/osmNetconvert.typ.xml"
 WORKDIR /service
 COPY pyproject.toml README.md ./
 COPY app ./app

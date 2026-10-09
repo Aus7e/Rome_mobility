@@ -43,3 +43,25 @@ hourly flow counts or actual traffic-signal timing programs.
 Sources:
 - https://community.openstreetmap.org/t/overpass-api-error-406/143198
 - https://wiki.openstreetmap.org/wiki/Overpass_API
+
+
+## netconvert: "built in type map" or SUMO_HOME not set
+
+This occurs **after** OSM download, when `netconvert` cannot find its
+`osmNetconvert.typ.xml` road-class map. Debian containers install this in
+`/usr/share/sumo/data/typemap`. The Docker image now sets
+`SUMO_HOME=/usr/share/sumo` and checks the type map at build time.
+The importer also sets/validates SUMO_HOME for manual invocations.
+
+Without updating the image, existing containers can be fixed immediately:
+
+    docker compose exec -e SUMO_HOME=/usr/share/sumo salaria-lab python scripts/bootstrap_sumo.py
+
+With the new image:
+
+    git pull origin main
+    docker compose up --build -d
+    docker compose exec salaria-lab python scripts/bootstrap_sumo.py
+
+The importer uses the previously downloaded `data/raw/salaria.osm.xml`,
+so a new Overpass request is normally unnecessary.
