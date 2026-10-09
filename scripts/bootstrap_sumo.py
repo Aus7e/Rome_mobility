@@ -41,7 +41,8 @@ def main():
         sys.exit("netconvert missing. Install SUMO or run with --download-only.")
     subprocess.run([binary,"--osm-files",str(raw),"--output-file",str(net),
                     "--geometry.remove","--ramps.guess","--roundabouts.guess",
-                    "--junctions.join","--tls.guess-signals","--tls.discard-simple"],check=True)
+                    "--junctions.join","--tls.guess-signals","--tls.discard-simple",
+                    "--output.street-names","true"],check=True)
     print("SUMO network:",net)
     print("This network is uncalibrated; OSM default signal phases are NOT observed field plans.")
 

@@ -27,6 +27,7 @@ For local Python installation: install the SUMO binary (\`sumo\`, \`netconvert\`
 
 This does **NOT** claim a validated current Rome timing plan or real-time traffic.
 Full SUMO simulation and OSM geometry do not compensate for missing calibrated traffic counts, real controller schedules, measured turning flows, or empirical rain-braking effects.
+Average delay uses a per-trip freeflow length/speed reference, including turning trips.
 Simulation ends at the requested time; not all inserted trips are necessarily complete. Treat average travel time only as a completed-trip metric and examine completion rate when comparing scenarios.
 
 ### API
