@@ -2,6 +2,7 @@
 """FastAPI service. /api/refresh-osm and weather endpoint access public external sources."""
 from contextlib import asynccontextmanager
 from datetime import date
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
@@ -19,7 +20,7 @@ async def lifespan(_app):
     from app.sumo_runner import status
     from app.sumo_jobs import submit
     ready = status()
-    if ready["netconvert"] and not ready["available"]:
+    if os.environ.get("SALARIA_AUTO_SETUP", "1") == "1" and ready["netconvert"] and not ready["available"]:
         try:
             submit("setup")
         except RuntimeError:

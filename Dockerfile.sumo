@@ -12,7 +12,7 @@ WORKDIR /service
 COPY pyproject.toml README.md ./
 COPY app ./app
 COPY scripts ./scripts
-COPY --from=frontend /vendor/node_modules/three/build/three.module.js /service/app/static/vendor/three.module.js
+COPY --from=frontend /vendor/node_modules/three/build/ /service/app/static/vendor/
 COPY --from=frontend /vendor/node_modules/three/examples/jsm/controls/OrbitControls.js /service/app/static/vendor/addons/controls/OrbitControls.js
 RUN pip install --no-cache-dir ".[sumo]"
 RUN mkdir -p data/raw data/sumo data/cache
