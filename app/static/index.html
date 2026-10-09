@@ -21,6 +21,10 @@
       <div class="aside-scroll">
         <div class="eyebrow">01 / CONTESTO</div>
         <h2>Scenario</h2>
+        <div class="field"><label for="engine">Motore di simulazione</label>
+          <select id="engine"><option value="preview">Anteprima Python · rapida</option><option value="sumo">SUMO reale · microsimulazione</option></select>
+        </div>
+        <div class="info-line" id="sumoStatus">Verifica SUMO in corso…</div>
         <div class="field"><label for="segment">Tratto</label>
           <select id="segment"><option value="full">Prati Fiscali → GRA · intero asse</option><option value="south">Prima sezione · 0–45%</option><option value="north">Seconda sezione · 45–100%</option></select>
         </div>
@@ -40,6 +44,7 @@
         <h2>Traffico & velocità</h2>
         <div class="field"><label for="speed">Velocità nominale <output id="speedValue">50 km/h</output></label><input id="speed" type="range" min="15" max="100" step="5" value="50"></div>
         <div class="field"><label for="demand">Flusso base per direzione <output id="demandValue">500 veicoli/h</output></label><input id="demand" type="range" min="50" max="2000" step="50" value="500"></div>
+        <div class="field"><label for="sideTraffic">Domanda su strade laterali <output id="sideTrafficValue">25%</output></label><input id="sideTraffic" type="range" min="0" max="100" step="5" value="25"></div>
         <div class="info-line" id="estimatedDemand">Domanda stimata · —</div>
         <div class="section-rule"></div>
         <div class="eyebrow">03 / COORDINAMENTO</div>
@@ -58,6 +63,7 @@
         <div class="mini-fields"><div class="field"><label for="duration">Minuti</label><input id="duration" type="number" min="3" max="40" value="12"></div><div class="field"><label for="seed">Seed</label><input id="seed" type="number" min="0" max="1000000" value="42"></div></div>
         <button class="primary action" id="runBtn">▶ Avvia simulazione</button>
         <button class="secondary action" id="compareBtn">⇄ Confronta con baseline</button>
+        <button class="secondary action" id="setupSumoBtn">⚙ Prepara rete reale SUMO (OSM + netconvert)</button>
         <button class="secondary action" id="osmBtn">↓ Importa geometria e semafori OSM</button>
         <p id="message" class="message" role="status" aria-live="polite">Il modello iniziale è dimostrativo, non rappresenta dati di traffico misurati.</p>
       </div>

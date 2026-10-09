@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
 const $ = (id) => document.getElementById(id);
-const ids = ["hour","rain","speed","demand"];
+const ids = ["hour","rain","speed","demand","sideTraffic"];
 const state = { network:null, simulation:null, comparison:null, overrides:{}, playing:true, frame:0, lastTick:0, renderer:null, scene:null, controls:null, camera:null, cars:new Map(), lights:[], road:null, path:null, rain:null };
 const SCALE = 8;
 const palette = [0x63d7c2,0x92b6fc,0xf1c370,0xd0dce9,0xdd858d,0x95c9dd];
@@ -14,6 +14,7 @@ function syncLabels(){
   $("rainValue").textContent=Number($("rain").value).toFixed(1)+" mm/h";
   $("speedValue").textContent=$("speed").value+" km/h";
   $("demandValue").textContent=$("demand").value+" veicoli/h";
+  $("sideTrafficValue").textContent=$("sideTraffic").value+"%";
   const day=new Date($("day").value+"T12:00:00");
   const weekend=day.getDay()===0||day.getDay()===6, h=+$("hour").value;
   const factor=weekend?(h<6?.46:(h>=11&&h<=20?.78:.60)):(h<6?.30:((h>=7&&h<=9)?1.65:(h>=17&&h<=19)?1.5:([6,10,16,20].includes(h)?1.08:.88)));
@@ -28,7 +29,8 @@ function params(){
     rain_mm_h:+$("rain").value,speed_kmh:+$("speed").value,
     demand_vph:+$("demand").value, cycle_s:+$("cycle").value,
     green_s:+$("green").value, duration_min:+$("duration").value,
-    seed:+$("seed").value,mode:$("mode").value,segment:$("segment").value,overrides:state.overrides
+    seed:+$("seed").value,mode:$("mode").value,segment:$("segment").value,
+    side_traffic_share:+$("sideTraffic").value/100,overrides:state.overrides
   };
 }
 async function api(url,opts={}){
@@ -38,8 +40,8 @@ async function api(url,opts={}){
   return payload;
 }
 async function getNetwork(){
-  state.network=await api("/api/network?segment="+encodeURIComponent($("segment").value));
-  $("sourceChip").textContent=state.network.source==="openstreetmap"?"OSM · non verificato":"Demo sintetica";
+  state.network=await api(($("engine").value==="sumo"?"/api/sumo/network":"/api/network")+"?segment="+encodeURIComponent($("segment").value));
+  $("sourceChip").textContent=$("engine").value==="sumo"?"SUMO · OSM generato":state.network.source==="openstreetmap"?"OSM · non verificato":"Demo sintetica";
   $("networkNote").textContent=state.network.quality+" · "+Math.round(state.network.length_m/100)/10+" km";
   state.overrides={};
   renderSettings();
@@ -157,11 +159,25 @@ function drawNetwork(){
       rectangleRoad(aa,bb,.09,stripe,.09);
     }
   }
+  // The SUMO road layer includes cross streets and junctions from the imported network.
+  if(state.network.roads){
+    const sideRoad=new THREE.MeshStandardMaterial({color:0x476271,roughness:1});
+    const first=state.network.points[0], latitude=first[0],longitude=first[1];
+    const project=(p)=>new THREE.Vector3(
+       (p[1]-longitude)*111195*Math.cos(latitude*Math.PI/180)/SCALE,0,
+       -(p[0]-latitude)*111195/SCALE
+    );
+    for(const road of state.network.roads){
+      for(let j=1;j<road.points.length;j++)
+        rectangleRoad(project(road.points[j-1]),project(road.points[j]),
+          Math.max(.45,road.width_m/SCALE),sideRoad,.11);
+    }
+  }
   for(let i=0;i<state.network.signals.length;i++)state.lights.push(lightModel(state.network.signals[i]));
   makeLabel("PRATI FISCALI",positionAt(0).point);
   makeLabel("GRA",positionAt(state.network.length_m).point);
   const bMats=[0x243f4a,0x2c5061,0x315366,0x3b4d67].map(color=>new THREE.MeshStandardMaterial({color,roughness:1}));
-  for(let i=0;i<110;i++){
+  for(let i=0;i<(state.network.roads?0:110);i++){
     const s=(i+.5)/110*state.network.length_m;
     const {point,tangent}=positionAt(s);
     const cross=new THREE.Vector3(-tangent.z,0,tangent.x);
@@ -223,16 +239,26 @@ function showFrame(i){
   const sim=state.simulation;if(!sim||!state.path)return;
   const frame=sim.frames[i];if(!frame)return;
   const present=new Set();
-  for(const [id,direction,lane,distance] of frame.cars){
+  for(const row of frame.cars){
+    const id=row[0], direction=row[1], lane=row[2], distance=row[3];
     present.add(id);
     let mesh=state.cars.get(id);
     if(!mesh){mesh=makeCar(id,direction);state.cars.set(id,mesh);}
-    const s=direction===0?distance:state.network.length_m-distance;
-    const {point,tangent}=positionAt(s);
-    const cross=new THREE.Vector3(-tangent.z,0,tangent.x);
-    const offset=direction===0?-1.1-lane*2.15:1.1+lane*2.15;
-    mesh.position.copy(point).addScaledVector(cross,offset);
-    mesh.rotation.y=Math.atan2(tangent.x,tangent.z)+(direction===0?0:Math.PI);
+    if(sim.engine==="sumo"){
+      // TraCI native x/y projected to geographic coordinates by sumolib.
+      const [lon,lat,kmh,bearing]=row.slice(1);
+      const origin=state.network.points[0], cos=Math.cos(origin[0]*Math.PI/180);
+      mesh.position.set((lon-origin[1])*111195*cos/SCALE,0,
+                        -(lat-origin[0])*111195/SCALE);
+      mesh.rotation.y=Math.PI-bearing*Math.PI/180;
+    }else{
+      const s=direction===0?distance:state.network.length_m-distance;
+      const {point,tangent}=positionAt(s);
+      const cross=new THREE.Vector3(-tangent.z,0,tangent.x);
+      const offset=direction===0?-1.1-lane*2.15:1.1+lane*2.15;
+      mesh.position.copy(point).addScaledVector(cross,offset);
+      mesh.rotation.y=Math.atan2(tangent.x,tangent.z)+(direction===0?0:Math.PI);
+    }
   }
   for(const [id,mesh] of state.cars)if(!present.has(id)){state.scene.remove(mesh);state.cars.delete(id);}
   frame.signals.forEach((aspect,index)=>{
@@ -286,10 +312,38 @@ function queueChart(){
   data.forEach(([t,n],i)=>{const x=34+t/state.simulation.frames.at(-1).t*(w-52),y=8+(1-n/max)*(h-31);i?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.stroke();
   ctx.fillStyle="#879cad";ctx.font="11px sans-serif";ctx.fillText(String(max),6,15);ctx.fillText("0",15,h-20);ctx.fillText("Tempo →",w-76,h-5);
 }
+async function waitForJob(job){
+  while(true){
+    const snapshot=await api("/api/sumo/jobs/"+encodeURIComponent(job.id));
+    flash((snapshot.message||"In esecuzione")+" · "+Math.round(100*snapshot.progress)+"%");
+    if(snapshot.status==="complete")
+      return api("/api/sumo/jobs/"+encodeURIComponent(job.id)+"/result");
+    if(snapshot.status==="failed")throw new Error(snapshot.message);
+    await new Promise(resolve=>setTimeout(resolve,1100));
+  }
+}
+async function refreshSumoStatus(){
+  const s=await api("/api/sumo/status");
+  $("sumoStatus").textContent=s.available?"● SUMO pronto · rete importata":s.installed?
+    (s.network_ready?"SUMO installato, manca il client TraCI":"SUMO installato · rete da preparare"):
+    "SUMO non installato · usa Dockerfile.sumo";
+}
+async function setupSumo(){
+  $("setupSumoBtn").disabled=true;
+  try{
+    const job=await api("/api/sumo/setup",{method:"POST",body:"{}"});
+    await waitForJob(job);await refreshSumoStatus();
+    if($("engine").value==="sumo")await getNetwork();
+    flash("Rete SUMO costruita da OSM; verifica semafori e OD prima di usare i KPI.");
+  }catch(e){flash(e.message,true);}
+  finally{$("setupSumoBtn").disabled=false;}
+}
 async function run(){
   $("runBtn").disabled=true;flash("Calcolo dei veicoli, delle code e degli stati semaforici…");
   try{
-    const sim=await api("/api/simulate",{method:"POST",body:JSON.stringify(params())});
+    const sim=$("engine").value==="sumo"
+      ?await waitForJob(await api("/api/sumo/jobs",{method:"POST",body:JSON.stringify(params())}))
+      :await api("/api/simulate",{method:"POST",body:JSON.stringify(params())});
     state.simulation=sim;state.frame=0;state.playing=true;state.lastTick=0;
     $("timeline").max=Math.max(0,sim.frames.length-1);
     metricsUI(sim.metrics);queueChart();showFrame(0);
@@ -300,7 +354,9 @@ async function run(){
 async function compare(){
   $("compareBtn").disabled=true;flash("Confronto baseline / scenario in corso…");
   try{
-    const c=await api("/api/compare",{method:"POST",body:JSON.stringify(params())});
+    const c=$("engine").value==="sumo"
+      ?await waitForJob(await api("/api/sumo/compare/jobs",{method:"POST",body:JSON.stringify(params())}))
+      :await api("/api/compare",{method:"POST",body:JSON.stringify(params())});
     state.comparison=c;
     const fields=[["Tempo medio", "avg_travel_s"," s"],["Ritardo medio","avg_delay_s"," s"],["Coda massima","max_queued_vehicles",""],["Fermate per viaggio","mean_stops_per_trip",""]];
     const root=$("comparison");root.replaceChildren();
@@ -342,6 +398,9 @@ function init(){
   const now=new Date();
   $("day").value=[now.getFullYear(),String(now.getMonth()+1).padStart(2,"0"),String(now.getDate()).padStart(2,"0")].join("-");
   syncLabels();setup3D();
+  $("engine").addEventListener("change",()=>getNetwork().then(run).catch(e=>flash(e.message,true)));
+  $("setupSumoBtn").addEventListener("click",setupSumo);
+  refreshSumoStatus().catch(e=>flash("SUMO: "+e.message,true));
   $("segment").addEventListener("change",()=>getNetwork().then(run).catch(e=>flash(e.message,true)));
   $("runBtn").addEventListener("click",run);
   $("compareBtn").addEventListener("click",compare);

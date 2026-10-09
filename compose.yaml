@@ -1,0 +1,10 @@
+services:
+  salaria-lab:
+    build:
+      context: .
+      dockerfile: Dockerfile.sumo
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/service/data
+    restart: unless-stopped

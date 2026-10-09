@@ -89,6 +89,79 @@ async def weather_history(day: date = Query(...)):
         raise HTTPException(status_code=503, detail="Weather source unavailable: "+str(exc)) from exc
 
 
+@app.get("/api/sumo/status")
+def sumo_status():
+    from app.sumo_runner import status
+    return status()
+
+
+@app.get("/api/sumo/network")
+def sumo_network(segment: str = Query(default="full", pattern="^(full|south|north)$")):
+    from app.sumo_runner import load_network
+    try:
+        return load_network(segment)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503,detail=str(exc)) from exc
+
+
+@app.post("/api/sumo/setup",status_code=202)
+def sumo_setup():
+    from app.sumo_jobs import submit
+    from app.sumo_runner import status
+    ready=status()
+    if not ready["netconvert"]:
+        raise HTTPException(status_code=503,detail="netconvert unavailable; install SUMO before importing")
+    try:
+        return submit("setup")
+    except RuntimeError as exc:
+        raise HTTPException(status_code=429,detail=str(exc)) from exc
+
+
+@app.post("/api/sumo/jobs",status_code=202)
+def sumo_job(request: SimulationRequest):
+    from app.sumo_jobs import submit
+    from app.sumo_runner import status
+    ready=status()
+    if not ready["available"]:
+        raise HTTPException(status_code=503,detail="Install SUMO/traci and import network via /api/sumo/setup")
+    try:
+        return submit("run",request)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=429,detail=str(exc)) from exc
+
+
+@app.post("/api/sumo/compare/jobs",status_code=202)
+def sumo_compare_job(request: SimulationRequest):
+    from app.sumo_jobs import submit
+    from app.sumo_runner import status
+    if not status()["available"]:
+        raise HTTPException(status_code=503,detail="SUMO runtime/network unavailable")
+    try:
+        return submit("compare",request)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=429,detail=str(exc)) from exc
+
+
+@app.get("/api/sumo/jobs/{job_id}")
+def sumo_job_status(job_id: str):
+    from app.sumo_jobs import info
+    try:
+        return info(job_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404,detail="Job not found") from exc
+
+
+@app.get("/api/sumo/jobs/{job_id}/result")
+def sumo_job_result(job_id: str):
+    from app.sumo_jobs import result
+    try:
+        return result(job_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404,detail="Job not found") from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409,detail=str(exc)) from exc
+
+
 @app.get("/api/sources")
 def sources():
     return {"osm":"https://www.openstreetmap.org/copyright",
