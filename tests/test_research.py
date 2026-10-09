@@ -167,3 +167,24 @@ def test_parallel_pairs_run_and_return_in_requested_order(monkeypatch, tmp_path)
     assert report["parallel_workers"] == 3
     assert [p["seed"] for p in report["pairs"]] == [21, 22, 23]
     assert progress[-1][0] == 1
+
+
+
+def test_research_exports_traffic_source_explicitly():
+    from app.research import ResearchRequest, run_study
+    from app import observations as data
+    from app.models import SimulationRequest
+    original = data.demand_for
+    import pytest
+    from unittest.mock import patch
+    def known(day,hour):
+        return {"csv_sha256":"known-hash","outbound_vph":400,"inbound_vph":700,
+                "provenance":{"outbound":{"source":"survey"},"inbound":{"source":"survey"}}}
+    def stub(request,frames=False):
+        return {"metrics":{"inserted":4,"completed":4,"avg_travel_s":10,
+                           "avg_delay_s":1,"controlled_lights":1}}
+    with patch.object(data,"demand_for",known):
+        result=run_study(ResearchRequest(scenario=SimulationRequest(
+            traffic_source="hourly_counts"),seeds=[1,2]),simulate=stub)
+    assert result["observation_dataset_sha256"]=="known-hash"
+    assert result["observation_provenance"]["inbound_vph"]==700

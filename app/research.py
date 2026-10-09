@@ -123,10 +123,12 @@ def run_study(design: ResearchRequest, *, simulate=run_sumo, net_path=NET_FILE, 
     Custom fake simulators run sequentially for deterministic unit tests.
     """
     pairs, warnings = [], []
+    observed_data = None
     start_dataset_hash = None
     if design.scenario.traffic_source == "hourly_counts":
         from app.observations import demand_for
-        start_dataset_hash = demand_for(design.scenario.day, design.scenario.hour)["csv_sha256"]
+        observed_data = demand_for(design.scenario.day, design.scenario.hour)
+        start_dataset_hash = observed_data["csv_sha256"]
     count = len(design.seeds)
     workers = allowed_workers(design.workers) if simulate is run_sumo else 1
     if workers == 1:
@@ -181,6 +183,7 @@ def run_study(design: ResearchRequest, *, simulate=run_sumo, net_path=NET_FILE, 
         "seeds": design.seeds,
         "parallel_workers": workers,
         "observation_dataset_sha256": start_dataset_hash,
+        "observation_provenance": observed_data,
         "baseline_definition": "manual, all offsets zero; NOT the observed Rome signal plan",
         "pairs": pairs, "summary": summarize(pairs),
         "warnings": list(dict.fromkeys(warnings)),

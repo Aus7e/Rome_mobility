@@ -114,7 +114,8 @@ routing travel-time prediction as a vehicle count. CSV rows are deliberately
 and 2 directions you need 48 separately sourced records for a day type.
 
 The source CSV is validated and saved under `data/observations` locally,
-with a SHA-256 digest, preserving provenance. The requested hour must include
+with a SHA-256 digest, preserving provenance. API access is bound to localhost
+by Docker Compose; it is not designed for exposing data externally. The requested hour must include
 both main-road directions; missing hours cause a clear error and **never**
 fall back silently to synthetic demand. Lateral-road route proportions,
 actual signal phases and OD matrices are **still assumptions**, so even
