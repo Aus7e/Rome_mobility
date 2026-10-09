@@ -2,8 +2,11 @@
 # Rome Mobility / Salaria Lab
 
 An experimental traffic-signal research playground for **Via Salaria, Prati Fiscali → GRA (Rome)**.
-Python FastAPI backend, animated Three.js 3D client, configurable traffic and signal scenarios.
-**This is a scientific starter prototype, not live traffic or a validated digital twin.**
+Python FastAPI backend, animated Three.js 3D client, and two scenario engines:
+- **Preview** — fast standalone Python approximation, works without SUMO.
+- **SUMO** — genuine TraCI microscopic vehicle simulations imported from OpenStreetMap, including turning traffic and side roads.
+
+**This is a research prototype, not live traffic or a calibrated digital twin.**
 
 ## ▶ Quick start
 
@@ -26,6 +29,30 @@ In the browser:
 - Export the scenario and output as JSON.
 - Click **Importa geometria e semafori OSM** to fetch OpenStreetMap geometry via Overpass and replace the illustrative corridor; results are cached locally.
 - Optionally load precipitation mm/h from Open-Meteo for a past date/hour.
+
+## 🚦 Full SUMO / TraCI mode (recommended)
+
+Install Docker Desktop or Docker Engine with Compose. From the repository root:
+
+    docker compose up --build
+
+Open **http://localhost:8000**. Choose **SUMO reale · microsimulazione**, then
+click **Prepara rete reale SUMO** to download OSM and run netconvert.
+Once completed, select SUMO again to load the controllers and road geometry.
+Run with **Avvia simulazione**; the UI polls a background job and replays actual
+SUMO vehicle positions in the stylized 3D city scene.
+
+- Individual per-intersection greens and offsets apply through TraCI, preserving
+  imported red/yellow/green conflicts; infeasible adjustments are skipped with warnings.
+- Real driving behaviour, turns and side-street vehicles come from SUMO itself.
+- Traffic demand, turning share, signal plan, rainfall response and the corridor
+  endpoint definition remain **research assumptions** until independently calibrated.
+- Access experiment metrics, comparison and JSON export from the browser.
+- This is a **local app**; it is not deployed or secured for public Internet use.
+
+Read [technical SUMO guide](docs/SUMO_MODE.md) and [source register](docs/DATA_SOURCES.md).
+SUMO test coverage includes a synthetic-but-georeferenced OSM network with actual
+netconvert and TraCI execution in GitHub Actions.
 
 ## Reproducible API
 
@@ -68,13 +95,13 @@ Optional download without SUMO:
     python scripts/bootstrap_sumo.py --download-only
 
 This saves OSM XML in data/raw and creates data/sumo/salaria.net.xml.
-You must add calibrated origin/destination demand, actual signal programs and validation before scientific inference. The web service currently uses a standalone research-preview engine and **does not claim to run SUMO**.
+You must add calibrated origin/destination demand, actual signal programs and validation before scientific inference. The web service now supports **both** a preview engine and genuine SUMO/TraCI simulation. See the **Full SUMO** instructions above for installation.
 
 SUMO docs: https://sumo.dlr.de/docs/Simulation/Traffic_Lights.html
 
 ## Development and tests
 
-    pip install -e ".[dev]"
+    pip install -e ".[dev,sumo]"
     pytest -q
 
 Project map:
