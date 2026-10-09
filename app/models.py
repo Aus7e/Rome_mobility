@@ -14,6 +14,7 @@ class SignalOverride(BaseModel):
 class SimulationRequest(BaseModel):
     day: date = Field(default_factory=date.today)
     hour: int = Field(default=8, ge=0, le=23)
+    traffic_source: Literal["synthetic", "hourly_counts"] = "synthetic"
     rain_mm_h: float = Field(default=0, ge=0, le=80)
     speed_kmh: float = Field(default=50, ge=15, le=100)
     demand_vph: int = Field(default=500, ge=50, le=2500, description="Hypothetical vehicles per hour per direction, before time multiplier")

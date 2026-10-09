@@ -29,7 +29,8 @@ OVERPASS_ENDPOINTS = (
 )
 OVERPASS_QUERY = (
     '[out:xml][timeout:180];'
-    '(way["highway"](41.936,12.487,42.006,12.537););'
+    '(way["highway"](41.936,12.487,42.006,12.537);'
+    'node["highway"="traffic_signals"](41.936,12.487,42.006,12.537););'
     '(._;>;);out body;'
 )
 REQUEST_HEADERS = {

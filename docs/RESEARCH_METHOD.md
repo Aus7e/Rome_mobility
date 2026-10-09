@@ -78,3 +78,19 @@ Traffic Volume, and HERE Traffic Analytics may support a later verified
 observations pipeline with date/hour/route provenance. Do not estimate
 vehicle throughput from routing ETA alone; do not confuse a routed path's
 journey time with the mixed-OD mean from SUMO.
+
+
+## Documented hourly demand inputs
+
+The `traffic_source=hourly_counts` mode requires a complete pair of
+directional observations (or licensed volume estimates) for the chosen
+weekday/weekend and hour. The simulation uses the input vehicles/h directly,
+rather than its previous heuristic day/hour multiplier. Imported counts
+are not evidence that local intersections, turn splits or signal programs
+have been calibrated. Each research bundle records the observation CSV
+SHA-256 to identify the source version and rejects a study if the file
+was replaced during execution.
+
+The CSV is deliberately supplied by the researcher, not auto-generated
+from routing ETAs. The model does not ship with measured counts for
+Via Salaria.

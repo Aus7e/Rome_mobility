@@ -83,6 +83,49 @@ validation, and safe local caching. After updating your checkout:
 Then reopen http://localhost:8000 and select SUMO. Read
 [Overpass error troubleshooting](docs/OVERPASS_TROUBLESHOOTING.md).
 
+## Actual mapped traffic lights and documented hourly traffic
+
+With SUMO active the sidebar now shows the georeferenced `highway=traffic_signals`
+**OSM nodes** near the study axis and the nearby SUMO controllers,
+with clickable OSM source IDs. This is a traceable *mapping inventory*,
+not a certified list of currently operational installations. Multiple
+traffic signal nodes may correspond to one junction or to pedestrian
+crossings. Some SUMO controllers may be auto-generated and unmatched.
+See `GET /api/signals/inventory`. For optional comparison with a historical
+2020 archival ArcGIS point layer run
+`docker compose exec salaria-lab python scripts/download_signal_archive.py`.
+That layer is explicitly archival, not contemporary evidence.
+
+To use observed hour-by-hour **directional flows** rather than made-up
+daily multipliers, select **Conteggi/stime orarie importate** and
+upload an authorized CSV. Required headers:
+
+```csv
+day_type,hour,direction,vehicles_per_hour,kind,source,observation_period,licence
+```
+
+Each row must identify a genuine source, observation period and usage licence,
+with `day_type` either `weekday` or `weekend`, `hour` 0–23,
+`direction` `outbound` (towards GRA) or `inbound` (towards Centro),
+and `kind` either `observed_count` for measured counts or
+`provider_estimate` for model-based volume estimates. Do not label a
+routing travel-time prediction as a vehicle count. CSV rows are deliberately
+**not bundled with invented sample figures**. For example, with 24 hours
+and 2 directions you need 48 separately sourced records for a day type.
+
+The source CSV is validated and saved under `data/observations` locally,
+with a SHA-256 digest, preserving provenance. The requested hour must include
+both main-road directions; missing hours cause a clear error and **never**
+fall back silently to synthetic demand. Lateral-road route proportions,
+actual signal phases and OD matrices are **still assumptions**, so even
+with observed corridor counts the whole model is NOT field-calibrated.
+The simplified Preview mode supports synthetic demand only.
+
+For counts estimated by a historical traffic data vendor, obtain licensed
+TomTom Traffic Volume outputs or municipal traffic detector/field counts;
+TomTom Routing ETA alone cannot supply traffic volume. Provider access,
+coverage, and redistribution terms must be verified separately.
+
 ## Optional TomTom typical traffic route reference
 
 You can connect your own TomTom Routing API key without modifying the app code.

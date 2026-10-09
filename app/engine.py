@@ -50,6 +50,8 @@ def aspect(signal, t):
 
 
 def simulate(network, request: SimulationRequest, include_frames=True):
+    if request.traffic_source != "synthetic":
+        raise ValueError("Hourly observed demand requires SUMO, not preview")
     length = network["length_m"]
     signals = [timing_for(s, request, length) for s in network["signals"]]
     rng = random.Random(request.seed)
