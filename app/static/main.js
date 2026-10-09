@@ -497,7 +497,7 @@ function setupTomTomKeyUI(){
   $("tomtomForm").addEventListener("submit",event=>{
     event.preventDefault();
     const key=$("tomtomApiKey").value.trim();
-    if(!key || key.length>180 || /\\s/.test(key)){
+    if(!key || key.length>180 || /\s/.test(key)){
       $("tomtomApiKey").setCustomValidity("Inserisci una chiave TomTom valida, senza spazi.");
       $("tomtomApiKey").reportValidity();
       return;

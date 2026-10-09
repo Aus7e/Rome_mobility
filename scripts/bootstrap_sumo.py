@@ -166,7 +166,8 @@ def main() -> None:
                         help="Separate lightweight corridor and expanded Roma Nord-Est")
     args = parser.parse_args()
     global OSM_FILE, NET_FILE
-    OSM_FILE, NET_FILE = osm_path(args.area), network_path(args.area)
+    if args.area != "salaria":
+        OSM_FILE, NET_FILE = osm_path(args.area), network_path(args.area)
     OSM_FILE.parent.mkdir(parents=True, exist_ok=True)
     NET_FILE.parent.mkdir(parents=True, exist_ok=True)
 

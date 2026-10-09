@@ -141,7 +141,7 @@ async def import_observations(request: Request):
 def mapped_signals(area: str = Query(default="salaria", pattern="^(salaria|nord_est)$")):
     from app.sumo_runner import status, load_network
     from app.signal_inventory import inventory
-    if not status(area)["available"]:
+    if not (status() if area=="salaria" else status(area))["available"]:
         raise HTTPException(status_code=503, detail="SUMO georeferenced OSM network not ready")
     try:
         return inventory(sumo_net=load_network("full",network_path(area)), osm_path=osm_path(area), region=area)
@@ -199,8 +199,8 @@ def sumo_areas():
 def sumo_status(area: str = Query(default="salaria", pattern="^(salaria|nord_est)$")):
     from app.sumo_runner import status
     from app.sumo_jobs import latest_setup
-    ready = status(area)
-    job = latest_setup(area)
+    ready = status() if area=="salaria" else status(area)
+    job = latest_setup() if area=="salaria" else latest_setup(area)
     return {**ready, "setup": job, "mode": "ready" if ready["available"] else
             "preparing" if job and job["status"] in {"queued", "running"} else "demo"}
 
@@ -219,7 +219,7 @@ def sumo_network(segment: str = Query(default="full", pattern="^(full|south|nort
 def sumo_setup(area: str = Query(default="salaria", pattern="^(salaria|nord_est)$")):
     from app.sumo_jobs import submit
     from app.sumo_runner import status
-    ready=status(area)
+    ready=status() if area=="salaria" else status(area)
     if not ready["netconvert"]:
         raise HTTPException(status_code=503,detail="netconvert unavailable; install SUMO before importing")
     try:
@@ -255,7 +255,7 @@ def sumo_job(request: SimulationRequest):
     _ensure_hourly_data(request)
     from app.sumo_jobs import submit
     from app.sumo_runner import status
-    ready=status(request.area)
+    ready=status() if request.area=="salaria" else status(request.area)
     if not ready["available"]:
         raise HTTPException(status_code=503,detail=_missing_sumo_components(ready))
     try:
@@ -283,7 +283,7 @@ def research_job(design: ResearchRequest):
     _ensure_hourly_data(design.scenario)
     from app.sumo_jobs import submit
     from app.sumo_runner import status
-    ready = status(design.scenario.area)
+    ready = status() if design.scenario.area=="salaria" else status(design.scenario.area)
     if not ready["available"]:
         raise HTTPException(status_code=503, detail=_missing_sumo_components(ready))
     try:
