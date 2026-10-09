@@ -24,7 +24,7 @@
         <div class="field"><label for="engine">Motore di simulazione</label>
           <select id="engine"><option value="preview">Anteprima Python · rapida</option><option value="sumo">SUMO reale · microsimulazione</option></select>
         </div>
-        <div class="info-line" id="sumoStatus">Verifica SUMO in corso…</div>
+        <div class="info-line" id="sumoStatus" role="status" aria-live="polite">Preparazione automatica SUMO in corso…</div>
         <div class="field"><label for="segment">Tratto</label>
           <select id="segment"><option value="full">Prati Fiscali → GRA · intero asse</option><option value="south">Prima sezione · 0–45%</option><option value="north">Seconda sezione · 45–100%</option></select>
         </div>

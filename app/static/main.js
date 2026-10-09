@@ -4,7 +4,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
 const $ = (id) => document.getElementById(id);
 const ids = ["hour","rain","speed","demand","sideTraffic"];
-const state = { network:null, simulation:null, comparison:null, overrides:{}, playing:true, frame:0, lastTick:0, renderer:null, scene:null, controls:null, camera:null, cars:new Map(), lights:[], road:null, path:null, rain:null };
+const state = { engineChosen:false, promoted:false, network:null, simulation:null, comparison:null, overrides:{}, playing:true, frame:0, lastTick:0, renderer:null, scene:null, controls:null, camera:null, cars:new Map(), lights:[], road:null, path:null, rain:null };
 const SCALE = 8;
 const palette = [0x63d7c2,0x92b6fc,0xf1c370,0xd0dce9,0xdd858d,0x95c9dd];
 
@@ -324,16 +324,40 @@ async function waitForJob(job){
 }
 async function refreshSumoStatus(){
   const s=await api("/api/sumo/status");
-  $("sumoStatus").textContent=s.available?"● SUMO pronto · rete importata":s.installed?
-    (s.network_ready?"SUMO installato, manca il client TraCI":"SUMO installato · rete da preparare"):
-    "SUMO non installato · usa Dockerfile.sumo";
+  const job=s.setup, preparing=job&&["queued","running"].includes(job.status);
+  if(s.available){
+    $("sumoStatus").textContent="● SUMO pronto · rete importata automaticamente";
+  }else if(preparing){
+    $("sumoStatus").textContent="◌ Preparazione automatica SUMO · "+(job.message||"in corso")+" · "+Math.round(100*job.progress)+"%";
+  }else if(job?.status==="failed"){
+    $("sumoStatus").textContent="⚠ Importazione fallita: "+job.message.slice(-240)+" · Premi «Riprova»; la demo resta disponibile.";
+  }else if(!s.installed||!s.python_modules||!s.netconvert){
+    $("sumoStatus").textContent="Anteprima disponibile · per SUMO avvia la versione Docker";
+  }else{
+    $("sumoStatus").textContent="La rete SUMO non è ancora pronta · premi «Riprova»";
+  }
+  $("setupSumoBtn").disabled=Boolean(preparing);
+  // A usable preview loads immediately; upgrade to real SUMO only once it is ready.
+  if(s.available && !state.engineChosen && !state.promoted && !$("runBtn").disabled){
+    state.promoted=true;
+    $("engine").value="sumo";
+    try{
+      await getNetwork();
+      await run();
+    }catch(error){
+      $("engine").value="preview";
+      state.engineChosen=true;
+      flash("SUMO non caricabile: "+error.message+". Puoi continuare con la demo.",true);
+      await getNetwork();
+    }
+  }
+  return s;
 }
 async function setupSumo(){
   $("setupSumoBtn").disabled=true;
   try{
     const job=await api("/api/sumo/setup",{method:"POST",body:"{}"});
     await waitForJob(job);await refreshSumoStatus();
-    if($("engine").value==="sumo")await getNetwork();
     flash("Rete SUMO costruita da OSM; verifica semafori e OD prima di usare i KPI.");
   }catch(e){flash(e.message,true);}
   finally{$("setupSumoBtn").disabled=false;}
@@ -398,9 +422,30 @@ function init(){
   const now=new Date();
   $("day").value=[now.getFullYear(),String(now.getMonth()+1).padStart(2,"0"),String(now.getDate()).padStart(2,"0")].join("-");
   syncLabels();setup3D();
-  $("engine").addEventListener("change",()=>getNetwork().then(run).catch(e=>flash(e.message,true)));
+  $("engine").addEventListener("change",async()=>{
+    state.engineChosen=true;
+    try{
+      if($("engine").value==="sumo"){
+        const status=await api("/api/sumo/status");
+        if(!status.available){
+          $("engine").value="preview";
+          flash("La rete SUMO si sta preparando oppure non è disponibile. Usa la demo e riprova.",true);
+          return;
+        }
+      }
+      await getNetwork();
+      await run();
+    }catch(error){
+      $("engine").value="preview";
+      flash(error.message+" · Continua con la demo.",true);
+      await getNetwork().catch(()=>{});
+    }
+  });
   $("setupSumoBtn").addEventListener("click",setupSumo);
-  refreshSumoStatus().catch(e=>flash("SUMO: "+e.message,true));
+  // Poll import readiness without requiring a manual refresh or terminal access.
+  window.setInterval(()=>refreshSumoStatus().catch(e=>{
+    $("sumoStatus").textContent="Verifica SUMO non disponibile: "+e.message;
+  }),3000);
   $("segment").addEventListener("change",()=>getNetwork().then(run).catch(e=>flash(e.message,true)));
   $("runBtn").addEventListener("click",run);
   $("compareBtn").addEventListener("click",compare);
@@ -410,6 +455,6 @@ function init(){
   $("playPause").addEventListener("click",()=>{state.playing=!state.playing;$("playPause").textContent=state.playing?"Ⅱ":"▶";});
   $("timeline").addEventListener("input",()=>{state.frame=+$("timeline").value;state.playing=false;$("playPause").textContent="▶";showFrame(state.frame);});
   window.addEventListener("resize",queueChart);
-  getNetwork().then(run).catch(err=>flash(err.message,true));
+  getNetwork().then(run).then(()=>refreshSumoStatus()).catch(err=>flash(err.message,true));
 }
 init();
