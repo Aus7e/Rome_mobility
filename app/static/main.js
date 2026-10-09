@@ -3,12 +3,14 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { setupStreetMap, updateStreetNetwork, renderStreetFrame, focusStreetSignal,
          fitStreetRoute, searchRoutePoints, goToSearchResult,
-         invalidateStreetMap } from "./map.js";
+         invalidateStreetMap, showRegionalStudyExtent } from "./map.js";
 
 const $ = (id) => document.getElementById(id);
 const ids = ["hour","rain","speed","demand","sideTraffic"];
 const state = { viewMode:"map", inventory:null, observations:null, engineChosen:false, promoted:false, network:null, simulation:null, comparison:null, overrides:{}, playing:true, frame:0, lastTick:0, renderer:null, scene:null, controls:null, camera:null, cars:new Map(), lights:[], road:null, path:null, rain:null };
 const SCALE = 8;
+let tomtomKey = ""; // Volatile tab memory only: no localStorage, cookies or URL params.
+let tomtomResolve = null;
 const palette = [0x63d7c2,0x92b6fc,0xf1c370,0xd0dce9,0xdd858d,0x95c9dd];
 
 function flash(msg, error=false){$("message").textContent=msg;$("message").classList.toggle("error",error);}
@@ -31,6 +33,7 @@ $("day").addEventListener("change",syncLabels);
 function params(){
   return {
     day:$("day").value, hour:+$("hour").value,traffic_source:$("trafficSource").value,
+    area:$("area").value,
     rain_mm_h:+$("rain").value,speed_kmh:+$("speed").value,
     demand_vph:+$("demand").value, cycle_s:+$("cycle").value,
     green_s:+$("green").value, duration_min:+$("duration").value,
@@ -45,14 +48,20 @@ async function api(url,opts={}){
   return payload;
 }
 async function getNetwork(){
-  state.network=await api(($("engine").value==="sumo"?"/api/sumo/network":"/api/network")+"?segment="+encodeURIComponent($("segment").value));
-  $("sourceChip").textContent=$("engine").value==="sumo"?"SUMO · OSM generato":state.network.source==="openstreetmap"?"OSM · non verificato":"Demo sintetica";
+  const area=$("area").value;
+  if(area==="nord_est" && $("engine").value!=="sumo"){
+    $("engine").value="sumo";
+    state.engineChosen=true;
+  }
+  state.network=await api(($("engine").value==="sumo"?"/api/sumo/network?area="+encodeURIComponent(area)+"&segment=":"/api/network?segment=")+encodeURIComponent($("segment").value));
+  state.loadedArea=area;
+  $("sourceChip").textContent=$("engine").value==="sumo"?(area==="nord_est"?"Roma Nord-Est · SUMO":"Salaria · SUMO"):state.network.source==="openstreetmap"?"OSM · non verificato":"Demo sintetica";
   $("networkNote").textContent=state.network.quality+" · "+Math.round(state.network.length_m/100)/10+" km";
   state.overrides={};
   state.path=worldPath();
   state.inventory=null;
   if($("engine").value==="sumo"){
-    try{state.inventory=await api("/api/signals/inventory");}
+    try{state.inventory=await api("/api/signals/inventory?area="+encodeURIComponent(area));}
     catch(e){$("signalEvidence").textContent="Inventario OSM non disponibile: "+e.message;}
   }
   renderSignalEvidence();
@@ -377,10 +386,20 @@ async function waitForJob(job){
   }
 }
 async function refreshSumoStatus(){
-  const s=await api("/api/sumo/status");
+  const area=$("area").value;
+  const s=await api("/api/sumo/status?area="+area);
   const job=s.setup, preparing=job&&["queued","running"].includes(job.status);
   if(s.available){
-    $("sumoStatus").textContent="● SUMO pronto · rete importata automaticamente";
+    $("sumoStatus").textContent="● SUMO pronto · "+(area==="nord_est"?"rete regionale":"rete Salaria");
+    if(area==="nord_est" && state.loadedArea!==area && !$("runBtn").disabled){
+      await getNetwork();
+      $("runBtn").disabled=false;
+      flash("Rete regionale pronta. Premi Avvia simulazione per generare il traffico di Roma Nord-Est.");
+    }
+  }else if(area==="nord_est" && !preparing){
+    $("sumoStatus").textContent="Roma Nord-Est da preparare · apri Laboratorio e premi «Prepara rete estesa»";
+    $("setupSumoBtn").textContent="↓ Prepara rete estesa Roma Nord-Est";
+    $("runBtn").disabled=true;
   }else if(preparing){
     $("sumoStatus").textContent="◌ Preparazione automatica SUMO · "+(job.message||"in corso")+" · "+Math.round(100*job.progress)+"%";
   }else if(job?.status==="failed"){
@@ -390,9 +409,11 @@ async function refreshSumoStatus(){
   }else{
     $("sumoStatus").textContent="La rete SUMO non è ancora pronta · premi «Riprova»";
   }
+  if(area==="salaria")$("setupSumoBtn").textContent="↻ Riprova preparazione rete SUMO";
   $("setupSumoBtn").disabled=Boolean(preparing);
+  if(area==="nord_est" && !s.available)$("runBtn").disabled=true;
   // A usable preview loads immediately; upgrade to real SUMO only once it is ready.
-  if(s.available && !state.engineChosen && !state.promoted && !$("runBtn").disabled){
+  if(area==="salaria" && s.available && !state.engineChosen && !state.promoted && !$("runBtn").disabled){
     state.promoted=true;
     $("engine").value="sumo";
     try{
@@ -410,13 +431,17 @@ async function refreshSumoStatus(){
 async function setupSumo(){
   $("setupSumoBtn").disabled=true;
   try{
-    const job=await api("/api/sumo/setup",{method:"POST",body:"{}"});
+    const job=await api("/api/sumo/setup?area="+$("area").value,{method:"POST",body:"{}"});
     await waitForJob(job);await refreshSumoStatus();
+    if($("area").value==="nord_est"){await getNetwork();$("runBtn").disabled=false;}
     flash("Rete SUMO costruita da OSM; verifica semafori e OD prima di usare i KPI.");
   }catch(e){flash(e.message,true);}
   finally{$("setupSumoBtn").disabled=false;}
 }
 async function run(){
+  if($("area").value==="nord_est" && state.loadedArea!=="nord_est"){
+    flash("Prima prepara la rete Roma Nord-Est dal Laboratorio di ricerca.",true);return;
+  }
   $("runBtn").disabled=true;flash("Calcolo dei veicoli, delle code e degli stati semaforici…");
   try{
     const sim=$("engine").value==="sumo"
@@ -450,14 +475,62 @@ async function compare(){
   }catch(e){flash(e.message,true);}
   finally{$("compareBtn").disabled=false;}
 }
+function showTomTomKeyDialog(){
+  if(tomtomKey)return Promise.resolve(tomtomKey);
+  const dialog=$("tomtomDialog");
+  $("tomtomApiKey").value="";
+  if(!dialog.open)dialog.showModal();
+  return new Promise(resolve=>{tomtomResolve=resolve;});
+}
+function finishTomTomDialog(key){
+  const resolve=tomtomResolve;tomtomResolve=null;
+  $("tomtomDialog").close();
+  if(resolve)resolve(key);
+}
+function setupTomTomKeyUI(){
+  const open=()=>{
+    $("tomtomApiKey").value=tomtomKey;
+    $("tomtomDialog").showModal();
+  };
+  $("tomtomHeaderBtn").addEventListener("click",open);
+  $("tomtomConnectBtn").addEventListener("click",open);
+  $("tomtomForm").addEventListener("submit",event=>{
+    event.preventDefault();
+    const key=$("tomtomApiKey").value.trim();
+    if(!key || key.length>180 || /\\s/.test(key)){
+      $("tomtomApiKey").setCustomValidity("Inserisci una chiave TomTom valida, senza spazi.");
+      $("tomtomApiKey").reportValidity();
+      return;
+    }
+    $("tomtomApiKey").setCustomValidity("");
+    tomtomKey=key;
+    $("tomtomApiKey").value="";
+    $("tomtomConnectionState").textContent="Chiave attiva in questa scheda (non salvata).";
+    finishTomTomDialog(tomtomKey);
+  });
+  $("tomtomApiKey").addEventListener("input",()=> $("tomtomApiKey").setCustomValidity(""));
+  $("tomtomCancelBtn").addEventListener("click",()=>finishTomTomDialog(null));
+  $("tomtomForgetBtn").addEventListener("click",()=>{
+    tomtomKey="";$("tomtomApiKey").value="";
+    $("tomtomConnectionState").textContent="Chiave dimenticata. Nessun dato conservato.";
+    finishTomTomDialog(null);
+  });
+  $("tomtomDialog").addEventListener("cancel",event=>{
+    event.preventDefault();finishTomTomDialog(null);
+  });
+}
 async function lookupTypicalTraffic(){
   const button=$("typicalTrafficBtn");
   button.disabled=true;
   $("typicalTrafficStatus").textContent="Recupero della previsione di traffico tipico...";
   try{
+    const key=await showTomTomKeyDialog();
+    if(!key){$("typicalTrafficStatus").textContent="Richiesta annullata: inserisci una chiave TomTom per continuare.";return;}
     const direction=$("mode").value==="wave_inbound"?"inbound":"outbound";
-    const query=new URLSearchParams({day:$("day").value,hour:String($("hour").value),direction});
-    const result=await api("/api/traffic/typical?"+query.toString());
+    const result=await api("/api/traffic/typical",{
+      method:"POST",
+      body:JSON.stringify({day:$("day").value,hour:Number($("hour").value),direction,api_key:key})
+    });
     const m=(result.travel_time_typical_s/60).toFixed(1);
     const free=result.travel_time_freeflow_s==null?"n.d.":(result.travel_time_freeflow_s/60).toFixed(1);
     $("typicalTrafficStatus").textContent="TomTom · "+(direction==="inbound"?"verso Centro":"verso GRA")+
@@ -663,12 +736,13 @@ function init(){
   syncLabels();
   setupStreetMap((signal)=>focusSignal(signal));
   setupMapInteractions();
+  setupTomTomKeyUI();
   requestAnimationFrame(tick);
   $("engine").addEventListener("change",async()=>{
     state.engineChosen=true;
     try{
       if($("engine").value==="sumo"){
-        const status=await api("/api/sumo/status");
+        const status=await api("/api/sumo/status?area="+$("area").value);
         if(!status.available){
           $("engine").value="preview";
           flash("La rete SUMO si sta preparando oppure non è disponibile. Usa la demo e riprova.",true);
@@ -684,6 +758,30 @@ function init(){
     }
   });
   $("setupSumoBtn").addEventListener("click",setupSumo);
+  $("area").addEventListener("change",async()=>{
+    const regional=$("area").value==="nord_est";
+    $("segmentField").hidden=regional;
+    $("segment").value="full";
+    if(regional){
+      $("engine").value="sumo";
+      state.engineChosen=true;
+      state.loadedArea=null;
+      $("runBtn").disabled=true;
+      showRegionalStudyExtent();
+      $("routeSource").textContent="Roma Nord-Est: seleziona «Prepara rete estesa» per caricare OSM/SUMO.";
+    }
+    try{
+      const status=await refreshSumoStatus();
+      if(status.available){
+        await getNetwork();
+        $("runBtn").disabled=false;
+      }else if(!regional){
+        $("engine").value="preview";
+        await getNetwork();
+        $("runBtn").disabled=false;
+      }
+    }catch(e){flash(e.message,true);}
+  });
   // Poll import readiness without requiring a manual refresh or terminal access.
   window.setInterval(()=>refreshSumoStatus().catch(e=>{
     $("sumoStatus").textContent="Verifica SUMO non disponibile: "+e.message;
