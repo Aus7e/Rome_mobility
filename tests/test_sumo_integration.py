@@ -29,12 +29,14 @@ def make_test_osm(path:Path):
                            lon="12.508000",visible="true",version="1")
         for k,v in tags.items():
             ET.SubElement(node,"tag",k=k,v=v)
-    # Three cross streets. Named Salaria axis remains bidirectional.
+    # OSM XML readers expect all nodes before any ways.
     for j,i in enumerate((3,6,9)):
         for side,lon in enumerate((12.504,12.512)):
             nodeid=100+j*2+side
             ET.SubElement(root,"node",id=str(nodeid),lat=f"{lat0+i*.005:.6f}",
                           lon=f"{lon:.6f}",visible="true",version="1")
+    # Three cross streets. Named Salaria axis remains bidirectional.
+    for j,i in enumerate((3,6,9)):
         way=ET.SubElement(root,"way",id=str(500+j),version="1")
         for nid in (100+j*2, i+1,101+j*2):
             ET.SubElement(way,"nd",ref=str(nid))
@@ -55,6 +57,10 @@ def test_real_sumo_traffic_pipeline(tmp_path):
     subprocess.run(["netconvert","--osm-files",str(osm),"--output-file",str(net),
                     "--tls.guess-signals","--output.street-names","true",
                     "--no-warnings","true"],check=True,capture_output=True,text=True)
+    import sumolib
+    imported=sumolib.net.readNet(str(net))
+    names=[(e.getID(),e.getName()) for e in imported.getEdges()]
+    assert any("salaria" in (name or "").lower() for _,name in names), names[:40]
     load_network.cache_clear()
     scene=load_network("full",net)
     assert scene["geo_valid"],"OSM import must preserve geographic projection"
