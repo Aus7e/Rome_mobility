@@ -1,5 +1,6 @@
 
 """FastAPI service. /api/refresh-osm and weather endpoint access public external sources."""
+from contextlib import asynccontextmanager
 from datetime import date
 from pathlib import Path
 
@@ -12,7 +13,21 @@ from app.engine import simulate
 from app.models import SimulationRequest
 from app.network import ROOT, current_network, refresh_osm, subset_network
 
-app = FastAPI(title="Rome Mobility | Salaria Lab", version="0.1.0")
+@asynccontextmanager
+async def lifespan(_app):
+    """Make the real SUMO network available without blocking the web UI."""
+    from app.sumo_runner import status
+    from app.sumo_jobs import submit
+    ready = status()
+    if ready["netconvert"] and not ready["available"]:
+        try:
+            submit("setup")
+        except RuntimeError:
+            pass  # Preview remains available if the importer cannot be queued.
+    yield
+
+
+app = FastAPI(title="Rome Mobility | Salaria Lab", version="0.3.0", lifespan=lifespan)
 STATIC = ROOT / "app" / "static"
 app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
 
@@ -92,7 +107,11 @@ async def weather_history(day: date = Query(...)):
 @app.get("/api/sumo/status")
 def sumo_status():
     from app.sumo_runner import status
-    return status()
+    from app.sumo_jobs import latest_setup
+    ready = status()
+    job = latest_setup()
+    return {**ready, "setup": job, "mode": "ready" if ready["available"] else
+            "preparing" if job and job["status"] in {"queued", "running"} else "demo"}
 
 
 @app.get("/api/sumo/network")

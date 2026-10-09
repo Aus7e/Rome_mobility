@@ -7,7 +7,7 @@
   <title>Salaria Lab · Rome Mobility</title>
   <link rel="stylesheet" href="/static/style.css">
   <script type="importmap">
-    {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/"}}
+    {"imports":{"three":"/static/vendor/three.module.js","three/addons/":"/static/vendor/addons/"}}
   </script>
 </head>
 <body>
@@ -63,7 +63,7 @@
         <div class="mini-fields"><div class="field"><label for="duration">Minuti</label><input id="duration" type="number" min="3" max="40" value="12"></div><div class="field"><label for="seed">Seed</label><input id="seed" type="number" min="0" max="1000000" value="42"></div></div>
         <button class="primary action" id="runBtn">▶ Avvia simulazione</button>
         <button class="secondary action" id="compareBtn">⇄ Confronta con baseline</button>
-        <button class="secondary action" id="setupSumoBtn">⚙ Prepara rete reale SUMO (OSM + netconvert)</button>
+        <button class="secondary action" id="setupSumoBtn">↻ Riprova preparazione rete SUMO</button>
         <button class="secondary action" id="osmBtn">↓ Importa geometria e semafori OSM</button>
         <p id="message" class="message" role="status" aria-live="polite">Il modello iniziale è dimostrativo, non rappresenta dati di traffico misurati.</p>
       </div>

@@ -37,13 +37,14 @@ def _imports():
 
 def status():
     import importlib.util
+    net_ready = NET_FILE.is_file() and NET_FILE.stat().st_size > 1024
     return {
         "installed": bool(shutil.which("sumo")),
         "netconvert": bool(shutil.which("netconvert")),
         "python_modules": bool(importlib.util.find_spec("traci") and importlib.util.find_spec("sumolib")),
-        "network_ready": NET_FILE.exists(),
+        "network_ready": net_ready,
         "network_file": str(NET_FILE),
-        "available": bool(shutil.which("sumo") and NET_FILE.exists() and importlib.util.find_spec("traci") and importlib.util.find_spec("sumolib")),
+        "available": bool(shutil.which("sumo") and net_ready and importlib.util.find_spec("traci") and importlib.util.find_spec("sumolib")),
         "model": "SUMO microscopic TraCI (not calibrated against traffic counts)"
     }
 
