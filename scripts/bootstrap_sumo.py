@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
+from app.areas import network_path, osm_path, regional_queries
 import shutil
 import subprocess
 import sys
@@ -38,6 +39,37 @@ REQUEST_HEADERS = {
     "Referer": "https://github.com/Aus7e/Rome_mobility",
     "Accept": "application/xml, text/xml;q=0.9, */*;q=0.8",
 }
+
+
+def assemble_region(parts: list[bytes]) -> bytes:
+    """Deduplicate OSM IDs across tile borders before SUMO conversion."""
+    merged = ET.Element("osm", attrib={"version": "0.6", "generator": "RomeMobility"})
+    seen = set()
+    road_count = 0
+    for raw in parts:
+        validate_osm(raw)
+        root = ET.fromstring(raw)
+        for child in root:
+            if child.tag not in {"node", "way", "relation"}:
+                continue
+            ident = (child.tag, child.get("id"))
+            if ident in seen:
+                continue
+            seen.add(ident)
+            merged.append(child)
+            road_count += (child.tag == "way")
+    if not road_count:
+        raise ValueError("Regional Overpass tiles contain no road geometry")
+    return ET.tostring(merged, encoding="utf-8", xml_declaration=True)
+
+
+def download_regional_osm(client) -> bytes:
+    parts = []
+    for idx, query in enumerate(regional_queries(), 1):
+        print(f"OSM region: tile {idx}/4", flush=True)
+        payload, _ = download_osm(client, query=query)
+        parts.append(payload)
+    return assemble_region(parts)
 
 
 def validate_osm(payload: bytes) -> None:
@@ -130,7 +162,11 @@ def main() -> None:
                         help="Download OSM XML but do not run netconvert")
     parser.add_argument("--force-download", action="store_true",
                         help="Download again even when a valid cached OSM file exists")
+    parser.add_argument("--area", choices=["salaria", "nord_est"], default="salaria",
+                        help="Separate lightweight corridor and expanded Roma Nord-Est")
     args = parser.parse_args()
+    global OSM_FILE, NET_FILE
+    OSM_FILE, NET_FILE = osm_path(args.area), network_path(args.area)
     OSM_FILE.parent.mkdir(parents=True, exist_ok=True)
     NET_FILE.parent.mkdir(parents=True, exist_ok=True)
 
@@ -146,7 +182,11 @@ def main() -> None:
     if not cached_valid:
         timeout = httpx.Timeout(connect=20.0, read=240.0, write=30.0, pool=30.0)
         with httpx.Client(timeout=timeout, follow_redirects=True) as client:
-            payload, endpoint = download_osm(client)
+            if args.area == "nord_est":
+                payload = download_regional_osm(client)
+                endpoint = "Four OpenStreetMap Overpass tiles"
+            else:
+                payload, endpoint = download_osm(client)
         # Write only a fully validated payload and replace cache atomically.
         partial = OSM_FILE.with_suffix(OSM_FILE.suffix + ".part")
         try:
@@ -164,7 +204,7 @@ def main() -> None:
         sys.exit("netconvert missing. Install SUMO or use --download-only.")
 
     sumo_env = sumo_environment()
-    print("SUMO: building lane-level road network with netconvert", flush=True)
+    print(f"SUMO: converting {args.area} driving network (may take time)", flush=True)
     # Never expose a partially written SUMO net to the API's readiness check.
     # A failed rebuild keeps the last fully generated network in place.
     partial_net = NET_FILE.with_name(NET_FILE.name + ".part")
