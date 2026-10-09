@@ -1,8 +1,6 @@
 """Threaded, bounded local SUMO experiments. Each run owns a TraCI connection."""
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from functools import partial
-from pathlib import Path
 import subprocess
 import sys
 from threading import RLock
@@ -40,12 +38,25 @@ def result(job_id):
         return job["result"]
 
 
+def latest_setup():
+    """Most recent import attempt, if any, to render readiness in the dashboard."""
+    with _LOCK:
+        for job in reversed(list(_JOBS.values())):
+            if job["kind"] == "setup":
+                return {k: v for k, v in job.items() if k != "result"}
+    return None
+
+
 def submit(kind,request=None):
     if kind not in {"setup","run","compare"}:
         raise ValueError("Unsupported job type")
     if kind!="setup" and not isinstance(request,SimulationRequest):
         raise ValueError("SimulationRequest required")
     with _LOCK:
+        if kind == "setup":
+            for job in _JOBS.values():
+                if job["kind"] == "setup" and job["status"] in {"queued", "running"}:
+                    return {k: v for k, v in job.items() if k != "result"}
         running=sum(j["status"] in {"queued","running"} for j in _JOBS.values())
         if running>=2:
             raise RuntimeError("SUMO is busy; at most two queued/running jobs")
@@ -75,11 +86,17 @@ def _execute(jid,kind,request):
                 check=False,
             )
             if process.returncode:
-                raise RuntimeError((process.stderr or process.stdout)[-2000:])
+                detail = (process.stdout + "\n" + process.stderr).strip()
+                raise RuntimeError(detail[-2000:] or "OSM import / netconvert failed without diagnostics")
             data={"message":process.stdout[-2000:],"network_file":str(ROOT/"data"/"sumo"/"salaria.net.xml")}
             # Invalidate any cached SUMO geo layout when rebuilding.
             from app.sumo_runner import load_network
             load_network.cache_clear()
+            # A syntactically valid net is not necessarily a routable Salaria net.
+            from app.sumo_runner import status
+            if not status()["available"]:
+                raise RuntimeError("SUMO road network was not created")
+            progress(.98, "SUMO network prepared")
         elif kind=="run":
             data=run_sumo(request,progress=progress)
         else:

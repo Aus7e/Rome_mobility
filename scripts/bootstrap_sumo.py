@@ -164,12 +164,21 @@ def main() -> None:
 
     sumo_env = sumo_environment()
     print("SUMO: building lane-level road network with netconvert", flush=True)
-    subprocess.run([
-        netconvert, "--osm-files", str(OSM_FILE), "--output-file", str(NET_FILE),
-        "--ramps.guess", "--roundabouts.guess", "--junctions.join",
-        "--tls.guess-signals", "--tls.discard-simple",
-        "--output.street-names", "true",
-    ], check=True, env=sumo_env)
+    # Never expose a partially written SUMO net to the API's readiness check.
+    # A failed rebuild keeps the last fully generated network in place.
+    partial_net = NET_FILE.with_name(NET_FILE.name + ".part")
+    try:
+        subprocess.run([
+            netconvert, "--osm-files", str(OSM_FILE), "--output-file", str(partial_net),
+            "--ramps.guess", "--roundabouts.guess", "--junctions.join",
+            "--tls.guess-signals", "--tls.discard-simple",
+            "--output.street-names", "true",
+        ], check=True, env=sumo_env)
+        if not partial_net.is_file() or partial_net.stat().st_size < 1024:
+            raise RuntimeError("netconvert produced no usable SUMO network")
+        partial_net.replace(NET_FILE)
+    finally:
+        partial_net.unlink(missing_ok=True)
     print(f"SUMO network created: {NET_FILE}", flush=True)
     print("WARNING: OSM signal phases and hourly traffic are not measured Rome data.")
 

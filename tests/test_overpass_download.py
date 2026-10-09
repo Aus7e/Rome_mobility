@@ -116,3 +116,59 @@ def test_sumo_environment_fails_with_clear_installation_hint(tmp_path, monkeypat
     with pytest.raises(RuntimeError, match="Missing SUMO OSM type map") as error:
         bootstrap.sumo_environment()
     assert "sumo-tools" in str(error.value)
+
+
+
+def test_network_is_published_atomically_only_after_netconvert_success(tmp_path, monkeypatch):
+    import subprocess
+    from pathlib import Path
+    from scripts import bootstrap_sumo as m
+    import sys
+
+    osm = tmp_path / "salaria.osm.xml"
+    net = tmp_path / "salaria.net.xml"
+    osm.write_bytes(VALID_OSM)
+    monkeypatch.setattr(m, "OSM_FILE", osm)
+    monkeypatch.setattr(m, "NET_FILE", net)
+    monkeypatch.setattr(m.shutil, "which", lambda name: "/usr/bin/netconvert")
+    monkeypatch.setattr(m, "sumo_environment", lambda: {"SUMO_HOME": "/fake"})
+    monkeypatch.setattr(sys, "argv", ["bootstrap_sumo.py"])
+
+    def fake_netconvert(cmd, check, env):
+        assert "--output-file" in cmd
+        partial = Path(cmd[cmd.index("--output-file") + 1])
+        assert partial != net
+        assert not net.exists()
+        partial.write_bytes(b"<net>" + b"0" * 2048 + b"</net>")
+
+    monkeypatch.setattr(subprocess, "run", fake_netconvert)
+    m.main()
+    assert net.exists()
+    assert not (tmp_path / "salaria.net.xml.part").exists()
+
+
+def test_network_failed_conversion_preserves_last_working_file(tmp_path, monkeypatch):
+    import subprocess
+    import sys
+    from scripts import bootstrap_sumo as m
+
+    osm = tmp_path / "salaria.osm.xml"
+    net = tmp_path / "salaria.net.xml"
+    osm.write_bytes(VALID_OSM)
+    net.write_bytes(b"previous-net")
+    monkeypatch.setattr(m, "OSM_FILE", osm)
+    monkeypatch.setattr(m, "NET_FILE", net)
+    monkeypatch.setattr(m.shutil, "which", lambda name: "/usr/bin/netconvert")
+    monkeypatch.setattr(m, "sumo_environment", lambda: {"SUMO_HOME": "/fake"})
+    monkeypatch.setattr(sys, "argv", ["bootstrap_sumo.py"])
+
+    def failed_netconvert(cmd, check, env):
+        partial = net.with_name(net.name + ".part")
+        partial.write_bytes(b"invalid-partial")
+        raise subprocess.CalledProcessError(1, cmd)
+
+    monkeypatch.setattr(subprocess, "run", failed_netconvert)
+    with pytest.raises(subprocess.CalledProcessError):
+        m.main()
+    assert net.read_bytes() == b"previous-net"
+    assert not (tmp_path / "salaria.net.xml.part").exists()

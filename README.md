@@ -8,16 +8,32 @@ Python FastAPI backend, animated Three.js 3D client, and two scenario engines:
 
 **This is a research prototype, not live traffic or a calibrated digital twin.**
 
-## ▶ Quick start
+## ▶ Quick start — plug & play (recommended)
 
-Requires Python **3.10+** and Internet access for the Three.js CDN. SUMO is **not** required for the web demo.
+Requires Docker Desktop with the Docker Compose plugin, plus Internet access
+**during installation and the first OSM download**. From this repository:
 
-1. Clone the repository and enter it.
-2. Create an environment: python -m venv .venv
-3. Activate it: macOS/Linux source .venv/bin/activate; Windows .venv\Scripts\activate
-4. Install: pip install -e ".[dev]"
-5. Start: uvicorn app.api:app --reload
-6. Open **http://127.0.0.1:8000**
+```bash
+docker compose up --build -d
+```
+
+Visit **http://localhost:8000**. The preview is available immediately.
+In the background the backend downloads the roads from OpenStreetMap and
+converts them with SUMO. The page shows import progress or an error; when the
+network is ready it automatically switches to the **SUMO** simulator and
+runs the real engine. If an Overpass provider is unavailable, the preview
+remains usable, and **Riprova preparazione rete SUMO** retries the setup.
+
+No manual Python installation, `SUMO_HOME` configuration, OSM bootstrap
+command, CDN dependency, or manual network-mode switching is required.
+The Docker image bundles Three.js and OrbitControls locally.
+
+Restart without rebuilding using `docker compose up -d`. OSM and SUMO
+networks are saved in `./data` and reused on the next startup.
+
+For developers running without Docker: install SUMO and Python dependencies;
+also provide the local frontend vendor assets under `app/static/vendor`
+using Three.js 0.165.0. The supported one-command deployment is Docker.
 
 In the browser:
 
@@ -36,11 +52,11 @@ Install Docker Desktop or Docker Engine with Compose. From the repository root:
 
     docker compose up --build
 
-Open **http://localhost:8000**. Choose **SUMO reale · microsimulazione**, then
-click **Prepara rete reale SUMO** to download OSM and run netconvert.
-Once completed, select SUMO again to load the controllers and road geometry.
-Run with **Avvia simulazione**; the UI polls a background job and replays actual
-SUMO vehicle positions in the stylized 3D city scene.
+Open **http://localhost:8000**. Network import runs automatically in the
+background (or is skipped when a usable cached network exists). SUMO is
+selected as soon as the import is ready; run new experiments with
+**Avvia simulazione**. The UI polls the background simulation job and replays
+SUMO vehicle positions. You can select Preview at any time.
 
 - Individual per-intersection greens and offsets apply through TraCI, preserving
   imported red/yellow/green conflicts; infeasible adjustments are skipped with warnings.
@@ -62,7 +78,7 @@ validation, and safe local caching. After updating your checkout:
 
     git pull origin main
     docker compose up --build -d
-    docker compose exec salaria-lab python scripts/bootstrap_sumo.py
+    # The app automatically imports the network; manual setup is optional.
 
 Then reopen http://localhost:8000 and select SUMO. Read
 [Overpass error troubleshooting](docs/OVERPASS_TROUBLESHOOTING.md).
