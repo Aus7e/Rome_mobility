@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0d1423">
+  <title>Salaria Lab · Rome Mobility</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script type="importmap">
+    {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/"}}
+  </script>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand"><span class="logo">R<span>·</span>M</span><div><strong>ROME MOBILITY</strong><small>TRAFFIC RESEARCH LAB / SALARIA</small></div></div>
+    <div class="top-meta"><span class="live-dot"></span> <span id="sourceChip">Demo sintetica</span><span class="splitter">/</span><span>Prati Fiscali — GRA</span></div>
+  </header>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="aside-scroll">
+        <div class="eyebrow">01 / CONTESTO</div>
+        <h2>Scenario</h2>
+        <div class="field"><label for="engine">Motore di simulazione</label>
+          <select id="engine"><option value="preview">Anteprima Python · rapida</option><option value="sumo">SUMO reale · microsimulazione</option></select>
+        </div>
+        <div class="info-line" id="sumoStatus">Verifica SUMO in corso…</div>
+        <div class="field"><label for="segment">Tratto</label>
+          <select id="segment"><option value="full">Prati Fiscali → GRA · intero asse</option><option value="south">Prima sezione · 0–45%</option><option value="north">Seconda sezione · 45–100%</option></select>
+        </div>
+        <div class="field"><label for="day">Giorno</label><input id="day" type="date"></div>
+        <div class="field">
+          <label for="hour">Orario <output id="hourValue">08:00</output></label>
+          <input id="hour" type="range" min="0" max="23" step="1" value="8">
+          <div class="range-caption"><span>00:00</span><span>12:00</span><span>23:00</span></div>
+        </div>
+        <div class="field">
+          <label for="rain">Precipitazioni <output id="rainValue">0 mm/h</output></label>
+          <input id="rain" type="range" min="0" max="20" step=".5" value="0">
+          <button class="text-button" id="weatherBtn">↗ Carica pioggia storica per questa data</button>
+        </div>
+        <div class="section-rule"></div>
+        <div class="eyebrow">02 / PARAMETRI</div>
+        <h2>Traffico & velocità</h2>
+        <div class="field"><label for="speed">Velocità nominale <output id="speedValue">50 km/h</output></label><input id="speed" type="range" min="15" max="100" step="5" value="50"></div>
+        <div class="field"><label for="demand">Flusso base per direzione <output id="demandValue">500 veicoli/h</output></label><input id="demand" type="range" min="50" max="2000" step="50" value="500"></div>
+        <div class="field"><label for="sideTraffic">Domanda su strade laterali <output id="sideTrafficValue">25%</output></label><input id="sideTraffic" type="range" min="0" max="100" step="5" value="25"></div>
+        <div class="info-line" id="estimatedDemand">Domanda stimata · —</div>
+        <div class="section-rule"></div>
+        <div class="eyebrow">03 / COORDINAMENTO</div>
+        <h2>Semafori</h2>
+        <div class="field">
+          <label for="mode">Strategia</label>
+          <select id="mode"><option value="manual">Manuale · offset individuali</option><option value="wave_outbound">Onda verde → GRA</option><option value="wave_inbound">Onda verde → Centro</option></select>
+        </div>
+        <div class="mini-fields">
+          <div class="field"><label for="cycle">Ciclo (s)</label><input id="cycle" type="number" min="40" max="240" step="5" value="90"></div>
+          <div class="field"><label for="green">Verde (s)</label><input id="green" type="number" min="10" max="180" step="5" value="45"></div>
+        </div>
+        <div id="signalSettings"><p class="hint">I semafori disponibili verranno caricati con la rete.</p></div>
+        <div class="section-rule"></div>
+        <div class="eyebrow">04 / SIMULAZIONE</div>
+        <div class="mini-fields"><div class="field"><label for="duration">Minuti</label><input id="duration" type="number" min="3" max="40" value="12"></div><div class="field"><label for="seed">Seed</label><input id="seed" type="number" min="0" max="1000000" value="42"></div></div>
+        <button class="primary action" id="runBtn">▶ Avvia simulazione</button>
+        <button class="secondary action" id="compareBtn">⇄ Confronta con baseline</button>
+        <button class="secondary action" id="setupSumoBtn">⚙ Prepara rete reale SUMO (OSM + netconvert)</button>
+        <button class="secondary action" id="osmBtn">↓ Importa geometria e semafori OSM</button>
+        <p id="message" class="message" role="status" aria-live="polite">Il modello iniziale è dimostrativo, non rappresenta dati di traffico misurati.</p>
+      </div>
+    </aside>
+    <main class="workspace">
+      <div class="workspace-head">
+        <div><div class="eyebrow">DIGITAL TWIN / PROTOTIPO</div><h1>Salaria <em>flow</em></h1><p>Prati Fiscali <span class="arrow">→</span> Grande Raccordo Anulare</p></div>
+        <div class="scene-tags"><span class="tag">MODELLO 3D STILIZZATO</span><span class="tag">NON LIVE</span></div>
+      </div>
+      <section class="viewport">
+        <div id="scene" aria-label="Vista tridimensionale della strada simulata"></div>
+        <div class="scene-overlay"><div class="compass">N <span>↑</span></div><div class="scene-hint">Trascina per ruotare · Rotella per zoom · Tasto destro per spostare</div></div>
+        <div id="renderError" class="render-error" hidden>Impossibile caricare Three.js. Verifica la connessione a Internet per il rendering 3D.</div>
+        <div class="playback">
+          <button id="playPause" title="Play/Pausa" aria-label="Play o pausa">Ⅱ</button>
+          <input id="timeline" type="range" min="0" max="1" step="1" value="0" aria-label="Avanzamento simulazione">
+          <span id="clock">00:00</span>
+          <select id="playSpeed" aria-label="Velocità di riproduzione"><option value="1">1×</option><option value="2">2×</option><option value="4">4×</option><option value="8">8×</option></select>
+        </div>
+      </section>
+      <section class="kpi-grid" aria-label="Indicatori della simulazione">
+        <div class="kpi"><small>Tempo medio di viaggio</small><strong id="travelKpi">—</strong><span>veicoli completati</span></div>
+        <div class="kpi"><small>Ritardo medio</small><strong id="delayKpi">—</strong><span>rispetto a flusso libero</span></div>
+        <div class="kpi"><small>Coda massima</small><strong id="queueKpi">—</strong><span>veicoli fermi nel corridoio</span></div>
+        <div class="kpi"><small>Fermate per viaggio</small><strong id="stopsKpi">—</strong><span>media completati</span></div>
+      </section>
+      <div class="bottom-grid">
+        <section class="panel"><div class="panel-title"><div><div class="eyebrow">ANALISI</div><h3>Veicoli in coda</h3></div><span id="completionLabel" class="muted">—</span></div><canvas id="queueChart" height="155"></canvas></section>
+        <section class="panel"><div class="panel-title"><div><div class="eyebrow">ESPERIMENTO</div><h3>Confronto con baseline</h3></div><button class="text-button" id="exportBtn">↓ JSON</button></div><div id="comparison" class="compare-placeholder">Esegui un confronto per misurare l'effetto degli offset rispetto a una configurazione ipotetica con tutti gli offset a zero.</div></section>
+      </div>
+      <footer class="footer">
+        <span id="networkNote">Rete sintetica · forme, impianti e flussi non verificati.</span>
+        <span>© OpenStreetMap contributors, quando si usano dati OSM · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">Licenza ODbL</a></span>
+      </footer>
+    </main>
+  </div>
+</div>
+<script type="module" src="/static/main.js"></script>
+</body></html>
