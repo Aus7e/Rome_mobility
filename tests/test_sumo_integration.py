@@ -76,3 +76,17 @@ def test_real_sumo_traffic_pipeline(tmp_path):
     assert output["frames"]
     assert any(frame["cars"] for frame in output["frames"])
     assert "warnings" in output
+
+    # Two distinct SUMO child processes with independent TraCI connections,
+    # each running the matched baseline/experiment pair. The input OSM net
+    # is shared read-only; SUMO state and sockets are not.
+    from app.research import ResearchRequest, run_study
+    result = run_study(
+        ResearchRequest(scenario=request.model_copy(update={"mode": "wave_outbound"}),
+                        seeds=[7, 8], workers=2),
+        net_path=net,
+    )
+    assert result["parallel_workers"] == 2
+    assert [item["seed"] for item in result["pairs"]] == [7, 8]
+    assert all(pair["baseline"]["inserted"] > 0 for pair in result["pairs"])
+    assert all(pair["experiment"]["inserted"] > 0 for pair in result["pairs"])
