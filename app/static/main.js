@@ -4,7 +4,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
 const $ = (id) => document.getElementById(id);
 const ids = ["hour","rain","speed","demand","sideTraffic"];
-const state = { engineChosen:false, promoted:false, network:null, simulation:null, comparison:null, overrides:{}, playing:true, frame:0, lastTick:0, renderer:null, scene:null, controls:null, camera:null, cars:new Map(), lights:[], road:null, path:null, rain:null };
+const state = { inventory:null, observations:null, engineChosen:false, promoted:false, network:null, simulation:null, comparison:null, overrides:{}, playing:true, frame:0, lastTick:0, renderer:null, scene:null, controls:null, camera:null, cars:new Map(), lights:[], road:null, path:null, rain:null };
 const SCALE = 8;
 const palette = [0x63d7c2,0x92b6fc,0xf1c370,0xd0dce9,0xdd858d,0x95c9dd];
 
@@ -18,14 +18,16 @@ function syncLabels(){
   const day=new Date($("day").value+"T12:00:00");
   const weekend=day.getDay()===0||day.getDay()===6, h=+$("hour").value;
   const factor=weekend?(h<6?.46:(h>=11&&h<=20?.78:.60)):(h<6?.30:((h>=7&&h<=9)?1.65:(h>=17&&h<=19)?1.5:([6,10,16,20].includes(h)?1.08:.88)));
-  $("estimatedDemand").textContent="Domanda modellata: "+Math.round($("demand").value*factor)+" veicoli/h per direzione · fattore "+factor.toFixed(2)+" (ipotetico)";
+  $("estimatedDemand").textContent=$("trafficSource").value==="hourly_counts"
+    ?"Domanda oraria esterna: controllare copertura per giorno e ora (senza moltiplicatori sintetici)"
+    :"Domanda modellata: "+Math.round($("demand").value*factor)+" veicoli/h per direzione · fattore "+factor.toFixed(2)+" (ipotetico)";
 }
 ids.forEach(id=>$(id).addEventListener("input",syncLabels));
 $("day").addEventListener("change",syncLabels);
 
 function params(){
   return {
-    day:$("day").value, hour:+$("hour").value,
+    day:$("day").value, hour:+$("hour").value,traffic_source:$("trafficSource").value,
     rain_mm_h:+$("rain").value,speed_kmh:+$("speed").value,
     demand_vph:+$("demand").value, cycle_s:+$("cycle").value,
     green_s:+$("green").value, duration_min:+$("duration").value,
@@ -44,11 +46,41 @@ async function getNetwork(){
   $("sourceChip").textContent=$("engine").value==="sumo"?"SUMO · OSM generato":state.network.source==="openstreetmap"?"OSM · non verificato":"Demo sintetica";
   $("networkNote").textContent=state.network.quality+" · "+Math.round(state.network.length_m/100)/10+" km";
   state.overrides={};
+  state.inventory=null;
+  if($("engine").value==="sumo"){
+    try{state.inventory=await api("/api/signals/inventory");}
+    catch(e){$("signalEvidence").textContent="Inventario OSM non disponibile: "+e.message;}
+  }
+  renderSignalEvidence();
   renderSettings();
   drawNetwork();
 }
 function makeEl(tag,text,cls){
   const el=document.createElement(tag);if(text!==undefined)el.textContent=text;if(cls)el.className=cls;return el;
+}
+function renderSignalEvidence(){
+  const root=$("signalEvidence");root.replaceChildren();
+  const inv=state.inventory;
+  if(!inv){
+    root.append(makeEl("p","In modalità SUMO è disponibile il confronto fra nodi OSM e controllori generati.","hint"));
+    return;
+  }
+  const c=inv.counts;
+  root.append(makeEl("p",c.osm_nodes+" nodi semaforici mappati OSM · "+c.matched_pairs+
+    " associazioni di prossimità con "+c.sumo_controllers_generated+" controllori SUMO. Non certificati sul campo.","hint"));
+  const container=makeEl("div",undefined,"signal-inventory");
+  for(const item of inv.osm_candidates){
+    const line=makeEl("div",undefined,"signal-item");
+    const anchor=makeEl("a","OSM #"+item.osm_node_id);
+    anchor.href=item.source_url;anchor.target="_blank";anchor.rel="noopener";
+    line.append(anchor,makeEl("small"," · Km "+(item.s_m/1000).toFixed(2)+
+      (item.matched_sumo_controller?" · SUMO "+item.matched_sumo_controller:" · non abbinato")));
+    container.append(line);
+  }
+  root.append(container);
+  if(!inv.osm_candidates.length){
+    root.append(makeEl("p","Nessun nodo traffic_signals trovato nel file OSM locale. Non significa che non esistano semafori: serve aggiornamento o rilievo.","hint"));
+  }
 }
 function renderSettings(){
   const root=$("signalSettings");root.replaceChildren();
@@ -80,7 +112,9 @@ function renderSettings(){
       greenOutput.textContent=greenInput.value+" s";
     });
     greenField.append(greenInput);box.append(greenField);
-    const small=makeEl("small","Km "+(s.s_m/1000).toFixed(2)+" · "+(s.source==="synthetic_demo"?"dimostrativo":"OSM, non validato"));
+    const matched=state.inventory?.matches.find(m=>m.sumo_tls_id===s.id);
+    const evidence=matched?"collegato per prossimità al nodo "+matched.osm_id:"generato da SUMO, non verificato in OSM";
+    const small=makeEl("small","Km "+(s.s_m/1000).toFixed(2)+" · "+(s.source==="synthetic_demo"?"dimostrativo":evidence));
     box.append(small);root.append(box);
   }
 }
@@ -411,6 +445,44 @@ async function lookupTypicalTraffic(){
     $("typicalTrafficStatus").textContent="TomTom non disponibile: "+e.message+" · I risultati SUMO restano utilizzabili.";
   }finally{button.disabled=false;}
 }
+async function refreshObservations(){
+  const status=await api("/api/observations/status");
+  state.observations=status;
+  $("observationStatus").textContent=status.available
+    ?"Dataset: "+status.rows+" righe · "+status.source_classes.join(", ")+
+     " · verifica copertura giorno/ora prima del calcolo."
+    :"Nessun conteggio orario importato. Solo domanda sintetica.";
+  await refreshObservationHour();
+}
+async function refreshObservationHour(){
+  if($("trafficSource").value!=="hourly_counts"){
+    $("hourlyCoverage").textContent="Domanda sintetica, non osservata.";return;
+  }
+  try{
+    const q=new URLSearchParams({day:$("day").value,hour:String($("hour").value)});
+    const datum=await api("/api/observations/at?"+q.toString());
+    $("hourlyCoverage").textContent="Ora "+String(datum.hour).padStart(2,"0")+
+      ":00 · GRA: "+datum.outbound_vph+" veicoli/h · Centro: "+
+      datum.inbound_vph+" veicoli/h · "+datum.evidence_types.join(", ")+
+      " (OD laterali ancora ipotetiche)";
+  }catch(e){$("hourlyCoverage").textContent="Dati non disponibili per questa fascia: "+e.message;}
+}
+async function uploadObservedCsv(){
+  const field=$("observationsFile");
+  if(!field.files?.length){flash("Seleziona un CSV di conteggi verificabili.",true);return;}
+  $("importObservationsBtn").disabled=true;
+  try{
+    const file=field.files[0];
+    if(file.size>300000)throw new Error("CSV troppo grande (max 300 KB)");
+    const status=await api("/api/observations/import",{
+      method:"POST",headers:{"Content-Type":"text/csv"},
+      body:await file.arrayBuffer()
+    });
+    await refreshObservations();
+    flash("Import completato: "+status.rows+" righe, fonti conservate e direzioni distinte.");
+  }catch(e){flash("Import non riuscito: "+e.message,true);}
+  finally{$("importObservationsBtn").disabled=false;}
+}
 async function runResearch(){
   $("researchBtn").disabled=true;
   state.engineChosen=true;
@@ -502,6 +574,17 @@ function init(){
   $("runBtn").addEventListener("click",run);
   $("compareBtn").addEventListener("click",compare);
   $("researchBtn").addEventListener("click",runResearch);
+  $("importObservationsBtn").addEventListener("click",uploadObservedCsv);
+  $("trafficSource").addEventListener("change",async()=>{
+    if($("trafficSource").value==="hourly_counts" && $("engine").value!=="sumo"){
+      $("engine").value="sumo";state.engineChosen=true;
+      try{await getNetwork();}catch(e){flash("SUMO non pronto: "+e.message,true);$("engine").value="preview";$("trafficSource").value="synthetic";}
+    }
+    syncLabels();await refreshObservationHour();
+  });
+  $("day").addEventListener("change",()=>refreshObservationHour().catch(()=>{}));
+  $("hour").addEventListener("change",()=>refreshObservationHour().catch(()=>{}));
+  refreshObservations().catch(e=>{$("observationStatus").textContent=e.message;});
   $("typicalTrafficBtn").addEventListener("click",lookupTypicalTraffic);
   $("osmBtn").addEventListener("click",refreshOSM);
   $("weatherBtn").addEventListener("click",getWeather);

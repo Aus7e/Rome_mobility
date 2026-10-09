@@ -6,7 +6,7 @@ import io
 import os
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 import httpx
@@ -60,6 +60,8 @@ async def load_osm():
 
 @app.post("/api/simulate")
 def run_scenario(request: SimulationRequest):
+    if request.traffic_source == "hourly_counts":
+        raise HTTPException(status_code=422, detail="Hourly observed demand requires SUMO")
     network = subset_network(current_network(), request.segment)
     valid_ids = {signal["id"] for signal in network["signals"]}
     if not set(request.overrides).issubset(valid_ids):
@@ -72,6 +74,8 @@ def run_scenario(request: SimulationRequest):
 
 @app.post("/api/compare")
 def compare(request: SimulationRequest):
+    if request.traffic_source == "hourly_counts":
+        raise HTTPException(status_code=422, detail="Hourly observed demand requires SUMO")
     network = subset_network(current_network(), request.segment)
     if not set(request.overrides).issubset({s["id"] for s in network["signals"]}):
         raise HTTPException(status_code=422, detail="Unknown signal id")
@@ -105,6 +109,42 @@ async def weather_history(day: date = Query(...)):
                 "source":"Open-Meteo historical gridded model; not an on-road rain sensor"}
     except (httpx.HTTPError, ValueError, KeyError) as exc:
         raise HTTPException(status_code=503, detail="Weather source unavailable: "+str(exc)) from exc
+
+
+@app.get("/api/observations/status")
+def observations_status():
+    from app.observations import describe
+    return describe()
+
+
+@app.get("/api/observations/at")
+def observations_at(day: date, hour: int = Query(ge=0, le=23)):
+    from app.observations import demand_for
+    try:
+        return demand_for(day, hour)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/api/observations/import")
+async def import_observations(request: Request):
+    from app.observations import save_csv
+    try:
+        return save_csv(await request.body())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/api/signals/inventory")
+def mapped_signals():
+    from app.sumo_runner import status, load_network
+    from app.signal_inventory import inventory
+    if not status()["available"]:
+        raise HTTPException(status_code=503, detail="SUMO georeferenced OSM network not ready")
+    try:
+        return inventory(sumo_net=load_network("full"))
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @app.get("/api/traffic/typical")
@@ -167,8 +207,18 @@ def _missing_sumo_components(ready: dict) -> str:
               "oppure esegui python scripts/bootstrap_sumo.py nel container.")
 
 
+def _ensure_hourly_data(request: SimulationRequest):
+    if request.traffic_source == "hourly_counts":
+        from app.observations import demand_for
+        try:
+            demand_for(request.day, request.hour)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @app.post("/api/sumo/jobs",status_code=202)
 def sumo_job(request: SimulationRequest):
+    _ensure_hourly_data(request)
     from app.sumo_jobs import submit
     from app.sumo_runner import status
     ready=status()
@@ -182,6 +232,7 @@ def sumo_job(request: SimulationRequest):
 
 @app.post("/api/sumo/compare/jobs",status_code=202)
 def sumo_compare_job(request: SimulationRequest):
+    _ensure_hourly_data(request)
     from app.sumo_jobs import submit
     from app.sumo_runner import status
     ready = status()
@@ -195,6 +246,7 @@ def sumo_compare_job(request: SimulationRequest):
 
 @app.post("/api/research/jobs", status_code=202)
 def research_job(design: ResearchRequest):
+    _ensure_hourly_data(design.scenario)
     from app.sumo_jobs import submit
     from app.sumo_runner import status
     ready = status()

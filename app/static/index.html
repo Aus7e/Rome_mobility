@@ -46,6 +46,18 @@
         <div class="field"><label for="demand">Flusso base per direzione <output id="demandValue">500 veicoli/h</output></label><input id="demand" type="range" min="50" max="2000" step="50" value="500"></div>
         <div class="field"><label for="sideTraffic">Domanda su strade laterali <output id="sideTrafficValue">25%</output></label><input id="sideTraffic" type="range" min="0" max="100" step="5" value="25"></div>
         <div class="info-line" id="estimatedDemand">Domanda stimata · —</div>
+        <div class="field"><label for="trafficSource">Origine del volume veicoli</label>
+          <select id="trafficSource">
+            <option value="synthetic">Scenario ipotetico · domanda sintetica</option>
+            <option value="hourly_counts">Conteggi/stime orarie importate con fonte (solo SUMO)</option>
+          </select>
+        </div>
+        <div class="info-line" id="hourlyCoverage">Domanda sintetica, non osservata.</div>
+        <div class="field"><label for="observationsFile">CSV conteggi orari documentati</label>
+          <input type="file" id="observationsFile" accept=".csv,text/csv">
+          <button class="secondary action" id="importObservationsBtn">↑ Importa conteggi/stime con provenienza</button>
+        </div>
+        <div class="info-line" id="observationStatus">Nessun dato orario importato.</div>
         <div class="section-rule"></div>
         <div class="eyebrow">03 / COORDINAMENTO</div>
         <h2>Semafori</h2>
@@ -57,6 +69,7 @@
           <div class="field"><label for="cycle">Ciclo (s)</label><input id="cycle" type="number" min="40" max="240" step="5" value="90"></div>
           <div class="field"><label for="green">Verde (s)</label><input id="green" type="number" min="10" max="180" step="5" value="45"></div>
         </div>
+        <div id="signalEvidence"><p class="hint">Inventario OSM non ancora caricato.</p></div>
         <div id="signalSettings"><p class="hint">I semafori disponibili verranno caricati con la rete.</p></div>
         <div class="section-rule"></div>
         <div class="eyebrow">04 / SIMULAZIONE</div>

@@ -44,3 +44,27 @@ Data from traffic analytics vendors may be subject to proprietary usage terms.
 Public ArcGIS feature service: https://services2.arcgis.com/NZMqCJwY3kMjFOqf/ArcGIS/rest/services/semafori/FeatureServer/0
 
 This layer exposes fields including COD_IMP, TIPO, VIA_1, VIA_2, Lat and Long. Its metadata reports last editing on **19 February 2020**. Treat it as an archival comparator only: its provenance, geographic completeness, currency and licensing must be checked before using it as official current inventory. See scripts/download_signal_archive.py for an optional local export and comparison against the active OSM/demo axis.
+
+
+## October 2026: mapped signal inventory and actual hourly inputs
+
+The app now reads tagged OSM signal nodes from the downloaded OSM XML
+(including standalone tagged nodes on a newly downloaded network) and
+proximity-matches them to SUMO generated controllers. The inventory endpoint
+reports unmatched OSM and SUMO entries. A proximity match cannot establish
+whether an active, field-verified municipal controller exists.
+
+Only authorized locally imported hourly directional count data can enable
+`traffic_source=hourly_counts`; each record explicitly distinguishes
+`observed_count` from `provider_estimate`, source, period and licence.
+No data is bundled or invented. Missing hour/direction fails closed.
+A model using these data remains uncalibrated in side-road flows, OD routes,
+junction operations, and traffic signal time plans.
+
+Recommended licensed historical data sources:
+- https://docs.tomtom.com/traffic-stats/documentation/api/traffic-volume
+- https://docs.tomtom.com/traffic-stats/documentation/api/route-analysis
+
+Traffic Stats Route Analysis yields historical route travel times and probe-
+based speeds but not directional vehicle counts. Traffic Volume yields
+model-estimated counts, not manual roadside counts.
