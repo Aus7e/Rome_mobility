@@ -67,6 +67,17 @@ function renderSettings(){
       value.textContent=input.value+" s";
     });
     field.append(input);box.append(field);
+    const greenField=makeEl("div",undefined,"field");
+    const greenLabel=makeEl("label","Verde individuale");
+    const greenOutput=makeEl("output","come generale");
+    greenLabel.append(greenOutput);greenField.append(greenLabel);
+    const greenInput=makeEl("input");greenInput.type="range";greenInput.min="10";greenInput.max="180";greenInput.step="1";greenInput.value=$("green").value;
+    greenInput.setAttribute("aria-label","Verde "+s.id);
+    greenInput.addEventListener("input",()=>{
+      state.overrides[s.id]={...state.overrides[s.id],offset_s:state.overrides[s.id]?.offset_s||0,green_s:+greenInput.value};
+      greenOutput.textContent=greenInput.value+" s";
+    });
+    greenField.append(greenInput);box.append(greenField);
     const small=makeEl("small","Km "+(s.s_m/1000).toFixed(2)+" · "+(s.source==="synthetic_demo"?"dimostrativo":"OSM, non validato"));
     box.append(small);root.append(box);
   }
@@ -184,6 +195,15 @@ function setup3D(){
     const sun=new THREE.DirectionalLight(0xffffff,2.3);sun.position.set(-50,150,60);scene.add(sun);
     const ground=new THREE.Mesh(new THREE.PlaneGeometry(9000,9000),new THREE.MeshStandardMaterial({color:0x19362f,roughness:1}));
     ground.rotation.x=-Math.PI/2;ground.position.y=-.38;scene.add(ground);
+    const drops=new Float32Array(1100*3);
+    for(let i=0;i<1100;i++){
+      drops[i*3]=(rand(i+400)-.5)*115;
+      drops[i*3+1]=rand(i+811)*65;
+      drops[i*3+2]=(rand(i+1200)-.5)*115;
+    }
+    const dropsGeo=new THREE.BufferGeometry();dropsGeo.setAttribute("position",new THREE.BufferAttribute(drops,3));
+    const dropsMesh=new THREE.Points(dropsGeo,new THREE.PointsMaterial({color:0x82bce3,size:.32,transparent:true,opacity:.65,depthWrite:false}));
+    scene.add(dropsMesh);state.rain=dropsMesh;
     state.scene=scene;state.camera=camera;state.renderer=renderer;state.controls=controls;
     const resize=()=>{if(!host.clientWidth||!host.clientHeight)return;renderer.setSize(host.clientWidth,host.clientHeight);camera.aspect=host.clientWidth/host.clientHeight;camera.updateProjectionMatrix();};
     new ResizeObserver(resize).observe(host);resize();
@@ -228,6 +248,18 @@ function tick(now){
     state.frame+=1;
     if(state.frame>=state.simulation.frames.length){state.playing=false;state.frame=state.simulation.frames.length-1;}
     showFrame(state.frame);state.lastTick=now;
+  }
+  if(state.rain){
+    state.rain.visible=Number($("rain").value)>0;
+    if(state.rain.visible){
+      state.rain.position.copy(state.controls.target);
+      const pos=state.rain.geometry.attributes.position;
+      for(let i=0;i<pos.count;i++){
+        const y=pos.array[i*3+1]-(.55+Number($("rain").value)*.065);
+        pos.array[i*3+1]=y<0?65:y;
+      }
+      pos.needsUpdate=true;
+    }
   }
   state.controls.update();state.renderer.render(state.scene,state.camera);
 }

@@ -57,15 +57,22 @@ def closest_fraction(point, poly):
 
 
 def demo_network():
-    total = lengths(DEMO_POINTS)[-1]
+    cum = lengths(DEMO_POINTS)
+    total = cum[-1]
+    located = []
+    for i, f in enumerate([0.17, 0.38, 0.61, 0.83]):
+        target = total * f
+        j = next(k for k in range(len(cum)-1) if cum[k+1] >= target)
+        w = (target-cum[j]) / (cum[j+1]-cum[j])
+        latitude = DEMO_POINTS[j][0]*(1-w) + DEMO_POINTS[j+1][0]*w
+        longitude = DEMO_POINTS[j][1]*(1-w) + DEMO_POINTS[j+1][1]*w
+        located.append({"id": "DEMO-0"+str(i+1), "s_m": round(target,1),
+                        "lat": round(latitude,7), "lon": round(longitude,7),
+                        "source": "synthetic_demo", "label": "Semaforo dimostrativo "+str(i+1)})
     return {
         "source": "synthetic_demo", "quality": "Illustrative geometry, signals and traffic: not measured or validated",
         "points": DEMO_POINTS, "length_m": round(total, 1),
-        "signals": [
-            {"id": "DEMO-01", "s_m": round(total*f), "lat": DEMO_POINTS[0][0], "lon": DEMO_POINTS[0][1],
-             "source": "synthetic_demo", "label": "Semaforo dimostrativo "+str(i+1)}
-            for i, f in enumerate([0.17, 0.38, 0.61, 0.83])
-        ],
+        "signals": located,
         "updated_at": None,
         "attribution": "Synthetic illustrative corridor, not a measured map"
     }

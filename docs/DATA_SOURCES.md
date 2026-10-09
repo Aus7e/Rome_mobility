@@ -37,3 +37,10 @@
 © OpenStreetMap contributors, ODbL: https://www.openstreetmap.org/copyright
 Open-Meteo: https://open-meteo.com/en/terms; verify usage and attribution limits for deployment.
 Data from traffic analytics vendors may be subject to proprietary usage terms.
+
+
+## Additional historical ArcGIS signal layer (not contemporary)
+
+Public ArcGIS feature service: https://services2.arcgis.com/NZMqCJwY3kMjFOqf/ArcGIS/rest/services/semafori/FeatureServer/0
+
+This layer exposes fields including COD_IMP, TIPO, VIA_1, VIA_2, Lat and Long. Its metadata reports last editing on **19 February 2020**. Treat it as an archival comparator only: its provenance, geographic completeness, currency and licensing must be checked before using it as official current inventory. See scripts/download_signal_archive.py for an optional local export and comparison against the active OSM/demo axis.
