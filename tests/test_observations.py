@@ -55,7 +55,7 @@ def test_rest_upload_and_lookup(monkeypatch,tmp_path):
     original_desc=observations.describe
     monkeypatch.setattr(observations,"save_csv",lambda b: save(b,path=path))
     monkeypatch.setattr(observations,"demand_for",lambda d,h: query(d,h,path=path))
-    monkeypatch.setattr(observations,"describe",lambda: original_desc(observations.load(path)))
+    monkeypatch.setattr(observations,"describe",lambda bundle=None: original_desc(bundle if bundle is not None else observations.load(path)))
     client=TestClient(app)
     assert client.get("/api/observations/status").json()["available"] is False
     assert client.post("/api/observations/import",content=ROWS,

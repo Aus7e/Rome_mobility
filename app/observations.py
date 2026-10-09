@@ -45,14 +45,14 @@ def validate_csv(contents: bytes) -> dict:
                 raise ValueError("CSV supports a maximum of 96 hourly rows")
             if None in source:
                 raise ValueError(f"Line {line}: unexpected additional CSV columns")
-            day_type = source["day_type"].strip().lower()
-            direction = source["direction"].strip().lower()
-            kind = source["kind"].strip().lower()
+            day_type = (source.get("day_type") or "").strip().lower()
+            direction = (source.get("direction") or "").strip().lower()
+            kind = (source.get("kind") or "").strip().lower()
             if day_type not in DAY_TYPES or direction not in DIRECTIONS or kind not in KINDS:
                 raise ValueError(f"Line {line}: invalid day_type, direction or kind")
             try:
-                hour = int(source["hour"])
-                volume = float(source["vehicles_per_hour"])
+                hour = int(source.get("hour") or "")
+                volume = float(source.get("vehicles_per_hour") or "")
             except (TypeError, ValueError):
                 raise ValueError(f"Line {line}: invalid hour / vehicles_per_hour") from None
             if not 0 <= hour <= 23 or not math.isfinite(volume) or not 0 <= volume <= 8000:
