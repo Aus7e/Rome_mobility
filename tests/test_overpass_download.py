@@ -99,3 +99,20 @@ def test_api_explains_missing_sumo_network(monkeypatch):
     response = TestClient(app).post("/api/sumo/jobs", json={"duration_min": 3})
     assert response.status_code == 503
     assert "rete OSM" in response.json()["detail"]
+
+
+def test_sumo_environment_uses_locally_installed_type_maps(tmp_path, monkeypatch):
+    root = tmp_path / "sumo-installed"
+    typemap = root / "data" / "typemap" / "osmNetconvert.typ.xml"
+    typemap.parent.mkdir(parents=True)
+    typemap.write_text("<types/>")
+    monkeypatch.setenv("SUMO_HOME", str(root))
+    env = bootstrap.sumo_environment()
+    assert env["SUMO_HOME"] == str(root)
+
+
+def test_sumo_environment_fails_with_clear_installation_hint(tmp_path, monkeypatch):
+    monkeypatch.setenv("SUMO_HOME", str(tmp_path / "not-installed"))
+    with pytest.raises(RuntimeError, match="Missing SUMO OSM type map") as error:
+        bootstrap.sumo_environment()
+    assert "sumo-tools" in str(error.value)

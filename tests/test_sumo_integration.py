@@ -11,6 +11,7 @@ import xml.etree.ElementTree as ET
 
 import pytest
 
+from scripts.bootstrap_sumo import sumo_environment
 from app.models import SimulationRequest
 from app.sumo_runner import load_network, run_sumo
 
@@ -56,7 +57,7 @@ def test_real_sumo_traffic_pipeline(tmp_path):
     make_test_osm(osm)
     subprocess.run(["netconvert","--osm-files",str(osm),"--output-file",str(net),
                     "--tls.guess-signals","--output.street-names","true",
-                    "--no-warnings","true"],check=True,capture_output=True,text=True)
+                    "--no-warnings","true"],check=True,capture_output=True,text=True,env=sumo_environment())
     import sumolib
     imported=sumolib.net.readNet(str(net))
     names=[(e.getID(),e.getName()) for e in imported.getEdges()]

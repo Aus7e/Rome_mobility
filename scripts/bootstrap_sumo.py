@@ -7,7 +7,7 @@ server error page as an OSM file. Public OSM is not calibrated traffic data.
 from __future__ import annotations
 
 import argparse
-import io
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -95,6 +95,34 @@ def download_osm(
     )
 
 
+def sumo_environment() -> dict[str, str]:
+    """Resolve installed SUMO data files before running netconvert.
+
+    Debian/Ubuntu apt installs SUMO type maps under /usr/share/sumo.
+    Without SUMO_HOME, netconvert can try an invalid built-in type map and fail.
+    """
+    env = os.environ.copy()
+    if not env.get("SUMO_HOME"):
+        default_home = Path("/usr/share/sumo")
+        if (default_home / "data/typemap/osmNetconvert.typ.xml").is_file():
+            env["SUMO_HOME"] = str(default_home)
+    home = env.get("SUMO_HOME")
+    if not home:
+        raise RuntimeError(
+            "SUMO_HOME is not set. For the Docker/Debian SUMO package "
+            "set SUMO_HOME=/usr/share/sumo and install sumo-tools."
+        )
+    typemap = Path(home) / "data/typemap/osmNetconvert.typ.xml"
+    if not typemap.is_file():
+        raise RuntimeError(
+            f"Missing SUMO OSM type map: {typemap}. "
+            "Point SUMO_HOME at the SUMO installation containing data/typemap "
+            "(Debian: /usr/share/sumo, package sumo-tools)."
+        )
+    print(f"SUMO_HOME: {home}; OSM type map found", flush=True)
+    return env
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Import Rome Via Salaria road network into SUMO")
     parser.add_argument("--download-only", action="store_true",
@@ -134,13 +162,14 @@ def main() -> None:
     if not netconvert:
         sys.exit("netconvert missing. Install SUMO or use --download-only.")
 
+    sumo_env = sumo_environment()
     print("SUMO: building lane-level road network with netconvert", flush=True)
     subprocess.run([
         netconvert, "--osm-files", str(OSM_FILE), "--output-file", str(NET_FILE),
         "--ramps.guess", "--roundabouts.guess", "--junctions.join",
         "--tls.guess-signals", "--tls.discard-simple",
         "--output.street-names", "true",
-    ], check=True)
+    ], check=True, env=sumo_env)
     print(f"SUMO network created: {NET_FILE}", flush=True)
     print("WARNING: OSM signal phases and hourly traffic are not measured Rome data.")
 
