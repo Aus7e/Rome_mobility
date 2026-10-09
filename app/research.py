@@ -115,7 +115,10 @@ def _pair_for_seed(scenario: SimulationRequest, seed: int, simulator=run_sumo, n
     }
 
 
-def run_study(design: ResearchRequest, *, simulate=run_sumo, net_path=NET_FILE, progress=None):
+def run_study(design: ResearchRequest, *, simulate=run_sumo, net_path=None, progress=None):
+    if net_path is None:
+        from app.areas import network_path
+        net_path = network_path(design.scenario.area)
     """A bounded process pool isolates SUMO TraCI clients and random streams.
 
     A pair runs in one process; multiple pairs run concurrently, each with

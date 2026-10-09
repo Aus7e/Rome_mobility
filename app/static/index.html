@@ -22,6 +22,7 @@
     </div>
     <div class="top-route"><span class="top-route-dot"></span><span>Via Salaria</span><span class="top-route-arrow">›</span><span>Grande Raccordo Anulare</span></div>
     <div class="top-actions">
+      <button type="button" id="tomtomHeaderBtn" class="tomtom-header-key">🔑 TomTom API</button>
       <span class="source-pill" id="sourceChip">Anteprima</span>
       <button id="mobilePanelToggle" class="mobile-menu" type="button" aria-controls="controlPanel" aria-expanded="true">☷ Parametri</button>
     </div>
@@ -38,12 +39,20 @@
 
         <div class="route-card" aria-label="Percorso da analizzare">
           <div class="route-stops">
-            <div class="route-stop"><span class="stop-circle start"></span><div><small>PARTENZA</small><strong>Prati Fiscali, Roma</strong></div></div>
+            <div class="route-stop"><span class="stop-circle start"></span><div><small>PARTENZA</small><strong id="routeStartLabel">Prati Fiscali, Roma</strong></div></div>
             <div class="route-connector" aria-hidden="true"></div>
-            <div class="route-stop"><span class="stop-pin end"></span><div><small>ARRIVO</small><strong>Grande Raccordo Anulare</strong></div></div>
+            <div class="route-stop"><span class="stop-pin end"></span><div><small>ARRIVO</small><strong id="routeEndLabel">Grande Raccordo Anulare</strong></div></div>
           </div>
-          <div class="route-distance"><span>Via Salaria</span><strong id="routeDistance">— km</strong></div>
+          <div class="route-distance"><span id="routeAreaLabel">Via Salaria</span><strong id="routeDistance">— km</strong></div>
           <div class="field compact-field">
+            <label for="area">Area della simulazione</label>
+            <select id="area">
+              <option value="salaria">Via Salaria · percorso rapido</option>
+              <option value="nord_est">Roma Nord-Est · rete estesa</option>
+            </select>
+          </div>
+          <button type="button" id="regionPrepareBtn" class="primary action region-prepare" hidden>↓ Prepara rete Roma Nord-Est</button>
+          <div class="field compact-field" id="segmentField">
             <label for="segment">Tratto da analizzare</label>
             <select id="segment">
               <option value="full">Intero percorso</option>
@@ -138,6 +147,8 @@
                 <button class="secondary action" type="button" id="importObservationsBtn">↑ Importa CSV</button>
               </div>
               <div class="info-line" id="observationStatus">Nessun dato orario importato.</div>
+              <button class="secondary action" type="button" id="tomtomConnectBtn">🔑 Collega API TomTom</button>
+              <p class="hint" id="tomtomConnectionState">API key non inserita in questa scheda.</p>
               <button class="secondary action" type="button" id="typicalTrafficBtn">Controlla stima tipica TomTom ↗</button>
               <div class="info-line" id="typicalTrafficStatus" role="status" aria-live="polite">Disponibile configurando una chiave API TomTom.</div>
             </div>
@@ -233,6 +244,22 @@
     </main>
   </div>
 </div>
+<dialog id="tomtomDialog" class="tomtom-dialog" aria-labelledby="tomtomDialogTitle">
+  <form id="tomtomForm" method="dialog">
+    <div class="dialog-badge">TomTom · API</div>
+    <h2 id="tomtomDialogTitle">Collega TomTom</h2>
+    <p>Inserisci la tua chiave <strong>TomTom Routing API</strong>. È usata per richiedere una stima tipica di percorrenza della Salaria: non equivale a misurazioni live o conteggi di veicoli.</p>
+    <label for="tomtomApiKey">Chiave API</label>
+    <input id="tomtomApiKey" type="password" autocomplete="off" spellcheck="false" maxlength="180" placeholder="Incolla la chiave TomTom" required>
+    <p class="dialog-privacy">La chiave resta soltanto nella memoria di questa scheda, non nel codice né sul disco. Viene inviata all'app locale quando richiedi la stima. Evita di usarla su server condivisi o pubblici.</p>
+    <a href="https://developer.tomtom.com/" target="_blank" rel="noopener noreferrer">Come ottenere una chiave TomTom ↗</a>
+    <div class="dialog-actions">
+      <button type="button" id="tomtomForgetBtn" class="dialog-ghost">Dimentica chiave</button>
+      <button type="button" id="tomtomCancelBtn" class="dialog-ghost">Annulla</button>
+      <button type="submit" class="dialog-submit">Usa la chiave</button>
+    </div>
+  </form>
+</dialog>
 <script type="module" src="/static/main.js"></script>
 </body>
 </html>

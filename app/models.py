@@ -24,6 +24,7 @@ class SimulationRequest(BaseModel):
     side_traffic_share: float = Field(default=0.25, ge=0, le=1, description="Experimental relative side-street demand")
     seed: int = Field(default=42, ge=0, le=1_000_000)
     segment: Literal["full", "south", "north"] = "full"
+    area: Literal["salaria", "nord_est"] = "salaria"
     mode: Literal["manual", "wave_outbound", "wave_inbound"] = "manual"
     overrides: dict[str, SignalOverride] = Field(default_factory=dict)
 

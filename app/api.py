@@ -14,6 +14,8 @@ import httpx
 from app.engine import simulate
 from app.research import ResearchRequest
 from app.models import SimulationRequest
+from app.areas import AREAS, network_path, osm_path
+from pydantic import BaseModel, Field, SecretStr
 from app.network import ROOT, current_network, refresh_osm, subset_network
 
 @asynccontextmanager
@@ -136,13 +138,36 @@ async def import_observations(request: Request):
 
 
 @app.get("/api/signals/inventory")
-def mapped_signals():
+def mapped_signals(area: str = Query(default="salaria", pattern="^(salaria|nord_est)$")):
     from app.sumo_runner import status, load_network
     from app.signal_inventory import inventory
-    if not status()["available"]:
+    if not (status() if area=="salaria" else status(area))["available"]:
         raise HTTPException(status_code=503, detail="SUMO georeferenced OSM network not ready")
     try:
-        return inventory(sumo_net=load_network("full"))
+        return inventory(sumo_net=load_network("full",network_path(area)), osm_path=osm_path(area), region=area)
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+class TomTomOnScreen(BaseModel):
+    day: date
+    hour: int = Field(ge=0, le=23)
+    direction: str = Field(pattern="^(outbound|inbound)$")
+    api_key: SecretStr | None = None
+
+
+@app.post("/api/traffic/typical")
+def typical_traffic_key_on_screen(request: TomTomOnScreen):
+    """Key is provided per request in JSON body and never saved by backend."""
+    from app.traffic_reference import get_typical_traffic
+    from app.sumo_runner import load_network, status
+    if not status("salaria")["available"]:
+        raise HTTPException(status_code=503, detail="Salaria SUMO network not ready")
+    try:
+        info = load_network("full", network_path("salaria"))
+        return get_typical_traffic(
+            request.day, request.hour, request.direction,
+            network=info, api_key=request.api_key.get_secret_value() if request.api_key else None)
     except (RuntimeError, ValueError) as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
@@ -162,34 +187,43 @@ def typical_route_traffic(day: date, hour: int = Query(ge=0, le=23),
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
+@app.get("/api/sumo/areas")
+def sumo_areas():
+    from app.sumo_runner import status
+    return {"areas":[{"id":area,"name":definition["name"],
+        "bbox":definition["bbox"],"description":definition["description"],
+        "ready":status(area)["available"]} for area, definition in AREAS.items()]}
+
+
 @app.get("/api/sumo/status")
-def sumo_status():
+def sumo_status(area: str = Query(default="salaria", pattern="^(salaria|nord_est)$")):
     from app.sumo_runner import status
     from app.sumo_jobs import latest_setup
-    ready = status()
-    job = latest_setup()
+    ready = status() if area=="salaria" else status(area)
+    job = latest_setup() if area=="salaria" else latest_setup(area)
     return {**ready, "setup": job, "mode": "ready" if ready["available"] else
             "preparing" if job and job["status"] in {"queued", "running"} else "demo"}
 
 
 @app.get("/api/sumo/network")
-def sumo_network(segment: str = Query(default="full", pattern="^(full|south|north)$")):
+def sumo_network(segment: str = Query(default="full", pattern="^(full|south|north)$"),
+                 area: str = Query(default="salaria", pattern="^(salaria|nord_est)$")):
     from app.sumo_runner import load_network
     try:
-        return load_network(segment)
-    except RuntimeError as exc:
+        return load_network(segment, network_path(area))
+    except (RuntimeError, ValueError) as exc:
         raise HTTPException(status_code=503,detail=str(exc)) from exc
 
 
 @app.post("/api/sumo/setup",status_code=202)
-def sumo_setup():
+def sumo_setup(area: str = Query(default="salaria", pattern="^(salaria|nord_est)$")):
     from app.sumo_jobs import submit
     from app.sumo_runner import status
-    ready=status()
+    ready=status() if area=="salaria" else status(area)
     if not ready["netconvert"]:
         raise HTTPException(status_code=503,detail="netconvert unavailable; install SUMO before importing")
     try:
-        return submit("setup")
+        return submit("setup",area)
     except RuntimeError as exc:
         raise HTTPException(status_code=429,detail=str(exc)) from exc
 
@@ -221,7 +255,7 @@ def sumo_job(request: SimulationRequest):
     _ensure_hourly_data(request)
     from app.sumo_jobs import submit
     from app.sumo_runner import status
-    ready=status()
+    ready=status() if request.area=="salaria" else status(request.area)
     if not ready["available"]:
         raise HTTPException(status_code=503,detail=_missing_sumo_components(ready))
     try:
@@ -235,7 +269,7 @@ def sumo_compare_job(request: SimulationRequest):
     _ensure_hourly_data(request)
     from app.sumo_jobs import submit
     from app.sumo_runner import status
-    ready = status()
+    ready = status(request.area)
     if not ready["available"]:
         raise HTTPException(status_code=503,detail=_missing_sumo_components(ready))
     try:
@@ -249,7 +283,7 @@ def research_job(design: ResearchRequest):
     _ensure_hourly_data(design.scenario)
     from app.sumo_jobs import submit
     from app.sumo_runner import status
-    ready = status()
+    ready = status() if design.scenario.area=="salaria" else status(design.scenario.area)
     if not ready["available"]:
         raise HTTPException(status_code=503, detail=_missing_sumo_components(ready))
     try:

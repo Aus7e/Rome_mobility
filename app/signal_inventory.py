@@ -82,10 +82,11 @@ def load_archive(path=ARCHIVE_PATH):
     ]
 
 
-def inventory(*, osm_path=OSM_PATH, archive_path=ARCHIVE_PATH, sumo_net=None):
+def inventory(*, osm_path=OSM_PATH, archive_path=ARCHIVE_PATH, sumo_net=None, region="salaria"):
     if sumo_net is None or sumo_net.get("source") != "sumo_osm" or not sumo_net.get("geo_valid"):
         raise ValueError("Georeferenced OSM/SUMO network required to audit mapped signals")
-    osm = extract_osm_candidates(osm_path, sumo_net["points"])
+    osm = extract_osm_candidates(osm_path, sumo_net["points"],
+                                radius_m=14000 if region=="nord_est" else 130)
     tls = sumo_net["signals"]
     matches = compare_controllers(osm, tls)
     mapped = {x["osm_id"] for x in matches}
@@ -93,7 +94,7 @@ def inventory(*, osm_path=OSM_PATH, archive_path=ARCHIVE_PATH, sumo_net=None):
     return {
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "evidence_level": "GEOSPATIAL_MAPPING_NOT_AUDITED_INSTALLATIONS",
-        "method": "OSM tagged traffic signal nodes near Salaria axis; "
+        "method": "OSM mapped traffic signal nodes near study axis or regional radius; "
                   "SUMO TLS proximity join ≤75 m; no controller identity inferred",
         "osm_candidates": [{**r, "matched_sumo_controller":
                             next((m["sumo_tls_id"] for m in matches if m["osm_id"] == r["id"]), None)}

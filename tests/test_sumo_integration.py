@@ -90,3 +90,37 @@ def test_real_sumo_traffic_pipeline(tmp_path):
     assert [item["seed"] for item in result["pairs"]] == [7, 8]
     assert all(pair["baseline"]["inserted"] > 0 for pair in result["pairs"])
     assert all(pair["experiment"]["inserted"] > 0 for pair in result["pairs"])
+
+
+
+def test_expanded_network_preserves_real_sumo_route_model(tmp_path):
+    """Same synthetic test OSM may populate either network path.
+
+    Avoid public Overpass in CI; verify that the regional path enables
+    the broader classification without breaking actual TraCI execution.
+    """
+    from app.areas import network_path, area_from_network
+    from app.sumo_runner import load_network, run_sumo
+    from scripts.bootstrap_sumo import sumo_environment
+    assert area_from_network("data/sumo/roma_nord_est.net.xml") == "nord_est"
+    assert area_from_network("data/sumo/salaria.net.xml") == "salaria"
+    assert network_path("nord_est").name == "roma_nord_est.net.xml"
+    osm = tmp_path / "small.osm.xml"
+    make_test_osm(osm)
+    net = tmp_path / "roma_nord_est.net.xml"
+    subprocess.run([
+        "netconvert", "--osm-files", str(osm), "--output-file", str(net),
+        "--tls.guess-signals", "--output.street-names", "true"
+    ], check=True, capture_output=True, text=True, env=sumo_environment())
+    load_network.cache_clear()
+    network = load_network("full", net)
+    assert network["area"] == "nord_est"
+    assert network["regional"] is True
+    assert len(network["roads"]) > 0
+    request = SimulationRequest(area="nord_est", duration_min=3, demand_vph=600)
+    # Synthetic test graph has only two road axes; missing additional cross-city
+    # OD groups yield warnings, not fake routes or an incorrect geographic claim.
+    result = run_sumo(request, net_path=net, frames=False)
+    assert result["engine"] == "sumo"
+    assert result["metrics"]["area"] == "nord_est"
+    assert "regional_ns" in result["route_groups"]

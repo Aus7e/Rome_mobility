@@ -35,6 +35,47 @@ For developers running without Docker: install SUMO and Python dependencies;
 also provide the local frontend vendor assets under `app/static/vendor`
 using Three.js 0.165.0. The supported one-command deployment is Docker.
 
+## Expanded Rome Nord-Est area and TomTom keys directly in the UI
+
+The area selector offers two independent SUMO datasets:
+
+- **Via Salaria**: existing small fast study, saved at `data/sumo/salaria.net.xml`.
+- **Roma Nord-Est**: an expanded region bounded by
+  latitude 41.904–42.038 and longitude 12.460–12.616,
+  approximately 15 km north–south and 13 km east–west (not all Rome),
+  including parts of Salaria, Nomentana and Tiburtina.
+
+Choose **Roma Nord-Est**, open **Laboratorio di ricerca** and click
+**Prepara rete estesa Roma Nord-Est** on first use. Four moderate Overpass
+roadway requests are de-duplicated into a separate OSM file and compiled into
+`data/sumo/roma_nord_est.net.xml`, preserving the original Salaria network.
+Expect a larger download and higher CPU/RAM usage. Retry if public Overpass
+is overloaded. Existing networks are cached; do not routinely redownload.
+
+Regional simulations generate through trips across the Salaria PLUS additional
+north/south/east/west cross-city routes on the imported navigable SUMO graph.
+There are no invented vehicle trajectories: SUMO moves the vehicles on actual
+imported road edges. **Origin/destination demand, directional rates, traffic
+light programming and time-of-day multipliers are still hypothetical** unless
+proper observations are separately imported. Enlarging geometry alone is not
+validation of real Rome traffic.
+
+**TomTom API key in the browser:** click **🔑 TomTom API** in the header or
+**Collega API TomTom** under **Dati di traffico**, and paste your own
+TomTom Routing API key into the password dialog. The key is held in the
+current browser tab's JavaScript memory only, and sent in the JSON body of
+a localhost POST request when you use **Controlla stima tipica TomTom**.
+It is not written to `.env`, localStorage, URL parameters, reports or files.
+Close the tab or press **Dimentica chiave** to clear it. The server contacts
+TomTom (which necessarily receives the key to authorize its request).
+This should only be used on the localhost deployment, not publicly exposed
+on an untrusted/shared site. The legacy `.env` server-side option remains
+available for developers.
+
+The TomTom Routing estimate applies to the **Salaria route**, even when the
+regional study view is selected; it is NOT a live traffic heatmap for all
+Rome and cannot provide hourly vehicle counts.
+
 ## Map-first interface (October 2026)
 
 The redesigned interface prioritizes an interactive **OpenStreetMap map of the

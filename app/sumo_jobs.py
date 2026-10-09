@@ -10,6 +10,7 @@ from app.models import SimulationRequest
 from app.research import ResearchRequest, run_study
 from app.network import ROOT
 from app.sumo_runner import run_sumo
+from app.areas import network_path
 
 _LOCK=RLock()
 _POOL=ThreadPoolExecutor(max_workers=1,thread_name_prefix="rome-sumo")
@@ -39,11 +40,11 @@ def result(job_id):
         return job["result"]
 
 
-def latest_setup():
+def latest_setup(area="salaria"):
     """Most recent import attempt, if any, to render readiness in the dashboard."""
     with _LOCK:
         for job in reversed(list(_JOBS.values())):
-            if job["kind"] == "setup":
+            if job["kind"] == "setup" and job.get("area","salaria")==area:
                 return {k: v for k, v in job.items() if k != "result"}
     return None
 
@@ -51,6 +52,8 @@ def latest_setup():
 def submit(kind,request=None):
     if kind not in {"setup","run","compare","research"}:
         raise ValueError("Unsupported job type")
+    if kind=="setup" and request not in {None,"salaria","nord_est"}:
+        raise ValueError("Unknown study area")
     if kind=="research" and not isinstance(request,ResearchRequest):
         raise ValueError("ResearchRequest required")
     if kind not in {"setup","research"} and not isinstance(request,SimulationRequest):
@@ -58,7 +61,9 @@ def submit(kind,request=None):
     with _LOCK:
         if kind == "setup":
             for job in _JOBS.values():
-                if job["kind"] == "setup" and job["status"] in {"queued", "running"}:
+                if (job["kind"] == "setup"
+                        and job.get("area","salaria")==(request or "salaria")
+                        and job["status"] in {"queued", "running"}):
                     return {k: v for k, v in job.items() if k != "result"}
         running=sum(j["status"] in {"queued","running"} for j in _JOBS.values())
         if running>=2:
@@ -69,7 +74,10 @@ def submit(kind,request=None):
                     del _JOBS[key]
                     break
         jid=str(uuid4())
-        _JOBS[jid]={"id":jid,"kind":kind,"status":"queued",
+        _JOBS[jid]={"id":jid,"kind":kind,
+                    "area": (request or "salaria") if kind=="setup" else
+                            request.scenario.area if kind=="research" else request.area,
+                    "status":"queued",
                     "progress":0.,"message":"Waiting for SUMO worker",
                     "submitted_at":datetime.now(timezone.utc).isoformat()}
     _POOL.submit(_execute,jid,kind,request)
@@ -84,20 +92,22 @@ def _execute(jid,kind,request):
         if kind=="setup":
             progress(.1,"Downloading OSM & building SUMO net (may take several minutes)")
             process=subprocess.run(
-                [sys.executable,str(ROOT/"scripts"/"bootstrap_sumo.py")],
-                cwd=str(ROOT),capture_output=True,text=True,timeout=600,
+                [sys.executable,str(ROOT/"scripts"/"bootstrap_sumo.py"),
+                 "--area", request or "salaria"],
+                cwd=str(ROOT),capture_output=True,text=True,timeout=1800,
                 check=False,
             )
             if process.returncode:
                 detail = (process.stdout + "\n" + process.stderr).strip()
                 raise RuntimeError(detail[-2000:] or "OSM import / netconvert failed without diagnostics")
-            data={"message":process.stdout[-2000:],"network_file":str(ROOT/"data"/"sumo"/"salaria.net.xml")}
+            data={"message":process.stdout[-2000:],
+                  "network_file":str(network_path(request or "salaria"))}
             # Invalidate any cached SUMO geo layout when rebuilding.
             from app.sumo_runner import load_network
             load_network.cache_clear()
             # A syntactically valid net is not necessarily a routable Salaria net.
             from app.sumo_runner import status
-            if not status()["available"]:
+            if not status(request or "salaria")["available"]:
                 raise RuntimeError("SUMO road network was not created")
             progress(.98, "SUMO network prepared")
         elif kind=="run":

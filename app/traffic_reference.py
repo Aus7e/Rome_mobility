@@ -53,13 +53,15 @@ def coordinate_chain(points: list[list[float]], direction: str) -> str:
 
 def get_typical_traffic(day: date, hour: int, direction: str, *,
                         network: dict, client: httpx.Client | None = None,
-                        now: datetime | None = None) -> dict:
-    api_key = os.environ.get("TOMTOM_API_KEY", "").strip()
+                        now: datetime | None = None,
+                        api_key: str | None = None) -> dict:
+    api_key = (api_key if api_key is not None else os.environ.get("TOMTOM_API_KEY", "")).strip()
     if not api_key:
         raise RuntimeError(
-            "TomTom API key not configured. Add TOMTOM_API_KEY to .env, "
-            "restart Docker and try again; traffic estimates are optional."
+            "TomTom API key missing. Use the in-app TomTom connection dialog or set TOMTOM_API_KEY in .env."
         )
+    if len(api_key)>180 or any(c in api_key for c in "\r\n\t "):
+        raise ValueError("Invalid TomTom API key format")
     if not network.get("geo_valid") or network.get("source") != "sumo_osm":
         raise ValueError("SUMO georeferenced OSM network is required for external route references")
     selected = next_departure(day, hour, now=now)

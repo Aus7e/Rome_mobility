@@ -126,7 +126,7 @@ export function updateStreetNetwork(network, inventory) {
   route.bindTooltip(isApproximate?"Percorso indicativo, non verificato":"Via Salaria · asse da OSM/SUMO",
     {sticky:true});
   // Sparse cross-street context already exists in SUMO network.
-  for(const road of (network.roads || []).slice(0,450)){
+  for(const road of (network.roads || []).slice(0,network.regional?4500:450)){
     if(!road.points || road.points.length<2)continue;
     roadLayer.addLayer(L().polyline(road.points,{
       color:"#8799ac",weight:Math.min(5,Math.max(2,road.width_m/4)),
@@ -155,14 +155,33 @@ export function updateStreetNetwork(network, inventory) {
   }
   fitStreetRoute();
   $("routeDistance").textContent=(network.length_m/1000).toFixed(1)+" km";
-  $("routeSource").textContent=isApproximate?
+  $("routeSource").textContent=network.regional?"Roma Nord-Est · rete OSM e traffico simulato non calibrato":isApproximate?
     "Tracciato indicativo · non è una mappa dei semafori reali":
     "Tracciato OSM · semafori non certificati sul campo";
 }
 
+export function showRegionalStudyExtent(){
+  if(!map)return;
+  roadLayer.clearLayers();
+  signalLayer.clearLayers();
+  carLayer.clearLayers();
+  currentNetwork=null;
+  carMarkers.clear();
+  markerBySignal.clear();
+  const bounds=L().latLngBounds([[41.904,12.460],[42.038,12.616]]);
+  roadLayer.addLayer(L().rectangle(bounds,{color:"#2470d8",weight:2,fillColor:"#4f9cf5",
+                                       fillOpacity:0.08,dashArray:"6 5"}));
+  map.fitBounds(bounds.pad(0.08),{animate:false});
+  $("routeDistance").textContent="Area estesa";
+}
 export function fitStreetRoute(){
   if(!map||!currentNetwork?.points?.length)return;
   const bounds=L().latLngBounds(currentNetwork.points.map(p=>[p[0],p[1]]));
+  if(currentNetwork.regional && currentNetwork.area_bbox){
+    const [south,west,north,east]=currentNetwork.area_bbox;
+    map.fitBounds([[south,west],[north,east]],{animate:false,padding:[25,25]});
+    return;
+  }
   if(bounds.isValid())map.fitBounds(bounds.pad(0.15),{
     paddingTopLeft:[30,130],paddingBottomRight:[30,90],maxZoom:15,
     animate:false
