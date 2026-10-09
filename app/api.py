@@ -10,7 +10,7 @@ import httpx
 
 from app.engine import simulate
 from app.models import SimulationRequest
-from app.network import ROOT, current_network, refresh_osm
+from app.network import ROOT, current_network, refresh_osm, subset_network
 
 app = FastAPI(title="Rome Mobility | Salaria Lab", version="0.1.0")
 STATIC = ROOT / "app" / "static"
@@ -28,8 +28,8 @@ def health():
 
 
 @app.get("/api/network")
-def network():
-    return current_network()
+def network(segment: str = Query(default="full", pattern="^(full|south|north)$")):
+    return subset_network(current_network(), segment)
 
 
 @app.post("/api/refresh-osm")
@@ -42,7 +42,7 @@ async def load_osm():
 
 @app.post("/api/simulate")
 def run_scenario(request: SimulationRequest):
-    network = current_network()
+    network = subset_network(current_network(), request.segment)
     valid_ids = {signal["id"] for signal in network["signals"]}
     if not set(request.overrides).issubset(valid_ids):
         raise HTTPException(status_code=422, detail="Unknown signal id; refresh current network")
@@ -54,7 +54,7 @@ def run_scenario(request: SimulationRequest):
 
 @app.post("/api/compare")
 def compare(request: SimulationRequest):
-    network = current_network()
+    network = subset_network(current_network(), request.segment)
     if not set(request.overrides).issubset({s["id"] for s in network["signals"]}):
         raise HTTPException(status_code=422, detail="Unknown signal id")
     baseline = request.model_copy(update={"mode":"manual","overrides":{}})

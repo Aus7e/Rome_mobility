@@ -28,7 +28,7 @@ function params(){
     rain_mm_h:+$("rain").value,speed_kmh:+$("speed").value,
     demand_vph:+$("demand").value, cycle_s:+$("cycle").value,
     green_s:+$("green").value, duration_min:+$("duration").value,
-    seed:+$("seed").value,mode:$("mode").value,overrides:state.overrides
+    seed:+$("seed").value,mode:$("mode").value,segment:$("segment").value,overrides:state.overrides
   };
 }
 async function api(url,opts={}){
@@ -38,7 +38,7 @@ async function api(url,opts={}){
   return payload;
 }
 async function getNetwork(){
-  state.network=await api("/api/network");
+  state.network=await api("/api/network?segment="+encodeURIComponent($("segment").value));
   $("sourceChip").textContent=state.network.source==="openstreetmap"?"OSM · non verificato":"Demo sintetica";
   $("networkNote").textContent=state.network.quality+" · "+Math.round(state.network.length_m/100)/10+" km";
   state.overrides={};
@@ -342,6 +342,7 @@ function init(){
   const now=new Date();
   $("day").value=[now.getFullYear(),String(now.getMonth()+1).padStart(2,"0"),String(now.getDate()).padStart(2,"0")].join("-");
   syncLabels();setup3D();
+  $("segment").addEventListener("change",()=>getNetwork().then(run).catch(e=>flash(e.message,true)));
   $("runBtn").addEventListener("click",run);
   $("compareBtn").addEventListener("click",compare);
   $("osmBtn").addEventListener("click",refreshOSM);

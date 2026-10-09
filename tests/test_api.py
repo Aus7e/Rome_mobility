@@ -31,3 +31,17 @@ def test_compare_preserves_shape():
     r=client.post("/api/compare",json={"duration_min":3,"mode":"wave_outbound"})
     assert r.status_code==200
     assert "baseline" in r.json() and "experiment" in r.json()
+
+
+def test_segment_selector():
+    all_=client.get("/api/network?segment=full").json()
+    half=client.get("/api/network?segment=south").json()
+    assert half["length_m"] < all_["length_m"]
+    assert half["signals"] != all_["signals"]
+    subset=client.post("/api/simulate",json={"segment":"south","duration_min":3})
+    assert subset.status_code==200
+    assert subset.json()["length_m"]==half["length_m"]
+
+
+def test_bad_segment_rejected():
+    assert client.get("/api/network?segment=unknown").status_code == 422

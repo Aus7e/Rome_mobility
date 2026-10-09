@@ -91,3 +91,8 @@ Project map:
 Contributions welcome: especially field inventories, legitimate count datasets, network testing and reproducible calibration. Never publish proprietary traffic data or personal vehicle traces.
 
 License: code MIT (see LICENSE). OSM data remain under ODbL.
+
+
+## Select a section
+
+The client supports the full Prati Fiscali–GRA candidate axis, the first 45% or the remaining 55%, using *distance fractions*, not confirmed neighbourhood boundaries. The model and list of semaphores update when the selection changes.

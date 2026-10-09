@@ -206,3 +206,31 @@ async def refresh_osm():
         except (httpx.HTTPError, ValueError, KeyError) as exc:
             last_error = str(exc)
     raise RuntimeError("Overpass unavailable/unsuitable data: "+str(last_error))
+
+
+def subset_network(net, section="full"):
+    """Experimental selection by corridor length, not confirmed neighbourhood boundaries."""
+    bounds={"full":(0.,1.),"south":(0.,.45),"north":(.45,1.)}
+    if section not in bounds:
+        raise ValueError("Unknown network section")
+    if section=="full":
+        return {**net,"section":"full"}
+    f0,f1=bounds[section]
+    cum=lengths(net["points"])
+    lo,hi=cum[-1]*f0,cum[-1]*f1
+
+    def point_at(distance):
+        for i in range(len(cum)-1):
+            if distance<=cum[i+1]:
+                t=(distance-cum[i])/(cum[i+1]-cum[i] or 1)
+                a,b=net["points"][i],net["points"][i+1]
+                return [a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t]
+        return net["points"][-1]
+
+    points=[point_at(lo)]
+    points += [net["points"][i] for i in range(1,len(cum)-1) if lo<cum[i]<hi]
+    points.append(point_at(hi))
+    signals=[{**s,"s_m":round(s["s_m"]-lo,1)}
+             for s in net["signals"] if lo+30<s["s_m"]<hi-30]
+    return {**net,"points":points,"length_m":round(lengths(points)[-1],1),
+            "signals":signals,"section":section}

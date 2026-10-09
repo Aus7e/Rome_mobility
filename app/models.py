@@ -21,6 +21,7 @@ class SimulationRequest(BaseModel):
     green_s: int = Field(default=45, ge=10, le=180)
     duration_min: int = Field(default=12, ge=3, le=40)
     seed: int = Field(default=42, ge=0, le=1_000_000)
+    segment: Literal["full", "south", "north"] = "full"
     mode: Literal["manual", "wave_outbound", "wave_inbound"] = "manual"
     overrides: dict[str, SignalOverride] = Field(default_factory=dict)
 
