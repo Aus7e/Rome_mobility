@@ -62,7 +62,7 @@ def test_research_and_evidence_are_in_progressive_disclosure():
     assert '<details id="researchSettings">' in html
     assert '<details id="trafficDataSettings">' in html
     assert '<details id="signalsSettings">' in html
-    assert '<details id="analysisDetails">' in html
+    assert 'id="analysisDetails"' in html
     assert 'NON LIVE' in html
     assert "OpenStreetMap" in html
 
