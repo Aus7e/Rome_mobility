@@ -73,7 +73,7 @@ def test_seed_input_bounded_unique():
     with pytest.raises(ValidationError):
         ResearchRequest(seeds=[3], scenario=SimulationRequest())
     with pytest.raises(ValidationError):
-        ResearchRequest(seeds=list(range(9)), scenario=SimulationRequest())
+        ResearchRequest(seeds=list(range(201)), scenario=SimulationRequest())
 
 
 def test_research_job_requires_ready_sumo(monkeypatch):
@@ -112,3 +112,58 @@ def test_export_endpoint_streams_zip(monkeypatch):
     assert response.headers["content-type"] == "application/zip"
     with ZipFile(io.BytesIO(response.content)) as archive:
         assert "runs.csv" in archive.namelist()
+
+
+
+def test_hundreds_of_seeds_allowed_but_concurrency_bounded(monkeypatch):
+    import app.research as research
+    design = ResearchRequest(
+        scenario=SimulationRequest(mode="wave_outbound"),
+        seeds=list(range(200)),
+        workers=8,
+    )
+    assert len(design.seeds) == 200
+    monkeypatch.setenv("ROME_RESEARCH_MAX_WORKERS", "3")
+    monkeypatch.setattr(research.os, "cpu_count", lambda: 12)
+    assert research.allowed_workers(design.workers) == 3
+    monkeypatch.setenv("ROME_RESEARCH_MAX_WORKERS", "invalid")
+    assert research.allowed_workers(8) == 4
+    monkeypatch.setattr(research.os, "cpu_count", lambda: 1)
+    assert research.allowed_workers(8) == 1
+
+
+def test_parallel_pairs_run_and_return_in_requested_order(monkeypatch, tmp_path):
+    """Fake executor tests scheduling without requiring SUMO on the Python job."""
+    from concurrent.futures import Future
+    import app.research as research
+
+    submitted = []
+    class FakePool:
+        def __init__(self, *, max_workers, mp_context):
+            assert max_workers == 3
+            assert mp_context.get_start_method() == "spawn"
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def submit(self, fn, scenario, seed, simulator, net_path):
+            submitted.append(seed)
+            future = Future()
+            future.set_result(research._pair_for_seed(scenario, seed, fake_runner))
+            return future
+
+    monkeypatch.setattr(research, "ProcessPoolExecutor", FakePool)
+    monkeypatch.setattr(research, "allowed_workers", lambda requested: 3)
+    design = ResearchRequest(
+        scenario=SimulationRequest(mode="wave_outbound"),
+        seeds=[21, 22, 23], workers=3,
+    )
+    progress = []
+    # Explicitly select the production simulator identity so the parallel
+    # scheduling branch runs, while replacing only its worker executor.
+    report = research.run_study(
+        design, progress=lambda p, msg: progress.append((p, msg)),
+        net_path=tmp_path / "missing.xml"
+    )
+    assert submitted == [21, 22, 23]
+    assert report["parallel_workers"] == 3
+    assert [p["seed"] for p in report["pairs"]] == [21, 22, 23]
+    assert progress[-1][0] == 1

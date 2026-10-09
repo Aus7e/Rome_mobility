@@ -95,12 +95,18 @@ def allowed_workers(requested: int) -> int:
     return max(1, min(requested, max(1, min(8, cap)), max(1, os.cpu_count() or 1)))
 
 
-def _pair_for_seed(scenario: SimulationRequest, seed: int, simulator=run_sumo) -> dict:
+def _pair_for_seed(scenario: SimulationRequest, seed: int, simulator=run_sumo, net_path=NET_FILE) -> dict:
     """Run matched policies sequentially within one isolated worker process."""
     baseline = scenario.model_copy(update={"mode": "manual", "overrides": {}, "seed": seed})
     experiment = scenario.model_copy(update={"seed": seed})
-    before = simulator(baseline, frames=False)
-    after = simulator(experiment, frames=False)
+    # The network argument must propagate to every process for isolated tests
+    # and for reproducible non-default research networks.
+    if simulator is run_sumo:
+        before = simulator(baseline, frames=False, net_path=net_path)
+        after = simulator(experiment, frames=False, net_path=net_path)
+    else:
+        before = simulator(baseline, frames=False)
+        after = simulator(experiment, frames=False)
     return {
         "seed": seed, "baseline": values_of(before["metrics"]),
         "experiment": values_of(after["metrics"]),
@@ -123,7 +129,7 @@ def run_study(design: ResearchRequest, *, simulate=run_sumo, net_path=NET_FILE, 
         for index, seed in enumerate(design.seeds):
             if progress:
                 progress(index / count, f"Pair {index + 1}/{count}: SUMO seed {seed}")
-            pairs.append(_pair_for_seed(design.scenario, seed, simulate))
+            pairs.append(_pair_for_seed(design.scenario, seed, simulate, net_path))
             if progress:
                 progress((index+1) / count, f"Finished {index + 1}/{count} pairs")
     else:
@@ -133,7 +139,7 @@ def run_study(design: ResearchRequest, *, simulate=run_sumo, net_path=NET_FILE, 
             mp_context=multiprocessing.get_context("spawn"),
         ) as pool:
             futures = {
-                pool.submit(_pair_for_seed, design.scenario, seed): seed
+                pool.submit(_pair_for_seed, design.scenario, seed, run_sumo, net_path): seed
                 for seed in design.seeds
             }
             for future in as_completed(futures):
