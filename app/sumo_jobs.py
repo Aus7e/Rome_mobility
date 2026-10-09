@@ -61,8 +61,9 @@ def submit(kind,request=None):
     with _LOCK:
         if kind == "setup":
             for job in _JOBS.values():
-                if job["kind"] == "setup" and job.get("area","salaria")==(request or "salaria")
-                    and job["status"] in {"queued", "running"}:
+                if (job["kind"] == "setup"
+                        and job.get("area","salaria")==(request or "salaria")
+                        and job["status"] in {"queued", "running"}):
                     return {k: v for k, v in job.items() if k != "result"}
         running=sum(j["status"] in {"queued","running"} for j in _JOBS.values())
         if running>=2:

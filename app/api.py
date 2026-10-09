@@ -269,7 +269,7 @@ def sumo_compare_job(request: SimulationRequest):
     _ensure_hourly_data(request)
     from app.sumo_jobs import submit
     from app.sumo_runner import status
-    ready = status()
+    ready = status(request.area)
     if not ready["available"]:
         raise HTTPException(status_code=503,detail=_missing_sumo_components(ready))
     try:
@@ -283,7 +283,7 @@ def research_job(design: ResearchRequest):
     _ensure_hourly_data(design.scenario)
     from app.sumo_jobs import submit
     from app.sumo_runner import status
-    ready = status()
+    ready = status(design.scenario.area)
     if not ready["available"]:
         raise HTTPException(status_code=503, detail=_missing_sumo_components(ready))
     try:
