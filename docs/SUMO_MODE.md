@@ -43,3 +43,5 @@ Simulation ends at the requested time; not all inserted trips are necessarily co
 Workers reside in memory, maximum two pending/running; this service should be run as
 a **single-process local laboratory**, not an unauthenticated public deployment.
 No production API credentials or sensitive files are required.
+
+**Compatibility:** OD route discovery now uses sumolib Dijkstra shortest paths, not the version-dependent TraCI `simulation.findRoute` wire protocol. This is valid across common SUMO distribution versions.

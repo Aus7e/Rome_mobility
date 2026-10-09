@@ -135,8 +135,11 @@ def load_network(segment="full", net_path=NET_FILE):
         near,s=closest_fraction([lat,lon],axis["points"])
         if near>130 or s<0 or s>axis["length_m"]:
             continue
+        indices=sorted({linkidx for inlane,outlane,linkidx in connections
+                        if "salaria" in (inlane.getEdge().getName() or "").lower()})
         signals.append({"id":tls.getID(),"s_m":round(s,1),"lat":lat,"lon":lon,
                         "source":"sumo_imported_tls","label":"SUMO controller "+tls.getID(),
+                        "main_link_indices":indices,
                         "distance_from_axis_m":round(near,1)})
     signals.sort(key=lambda x:x["s_m"])
     return {**axis,"source":"sumo_osm","roads":roadset,"signals":signals,
@@ -243,7 +246,7 @@ def _configure_lights(conn, net, request, info, warn):
     return configured
 
 
-def _route_catalog(conn, edgeinfo, length_m, seed, warnings):
+def _route_catalog(conn, net, edgeinfo, length_m, seed, warnings):
     rng=random.Random(seed)
     main=[e for e in edgeinfo if "salaria" in e["name"].lower() and e["distance_m"]<110]
     side=[e for e in edgeinfo if "salaria" not in e["name"].lower() and e["distance_m"]<320]
@@ -259,10 +262,13 @@ def _route_catalog(conn, edgeinfo, length_m, seed, warnings):
             a=rng.choice(starts)["id"];b=rng.choice(ends)["id"]
             if a==b:continue
             try:
-                stage=conn.simulation.findRoute(a,b,vType="lab_passenger")
-                if not stage.edges or stage.length < 220:
+                # Local Dijkstra routing avoids TraCI findRoute protocol
+                # mismatches between older distro binaries and newer clients.
+                route,cost=net.getShortestPath(net.getEdge(a),net.getEdge(b),
+                                               vClass="passenger")
+                if not route or cost < 220:
                     continue
-                edges=tuple(stage.edges)
+                edges=tuple(edge.getID() for edge in route)
                 if edges not in pairs:pairs.append(edges)
                 if len(pairs)>=8:break
             except Exception:
@@ -288,10 +294,12 @@ def _states(conn,signals):
     result=[]
     for sig in signals:
         state=conn.trafficlight.getRedYellowGreenState(sig["id"])
-        # Reduced lamp indicator is a display hint; full connection state remains in SUMO.
-        if any(c in "gG" for c in state):
+        indices=sig.get("main_link_indices",[])
+        # Show Salaria approach, not a simultaneous cross-street green phase.
+        selected=[state[i] for i in indices if 0<=i<len(state)]
+        if any(c in "gG" for c in selected):
             result.append("green")
-        elif "y" in state or "Y" in state:
+        elif any(c in "yY" for c in selected):
             result.append("amber")
         else:
             result.append("red")
@@ -325,7 +333,7 @@ def _run(request: SimulationRequest, *, net_path=NET_FILE, frames=True, progress
         conn.vehicletype.setMinGap("lab_passenger",2.5+.2*request.rain_mm_h)
         # Actual SUMO-calculated braking, junction conflicts, turns and queues.
         adjusted=_configure_lights(conn,net,request,info,warnings)
-        routes=_route_catalog(conn,info["usable_edges"],info["length_m"],request.seed,warnings)
+        routes=_route_catalog(conn,net,info["usable_edges"],info["length_m"],request.seed,warnings)
         if not routes["outbound"] and not routes["inbound"] and not routes["side_in"]:
             raise RuntimeError("No routable trips found. Check OSM/SUMO road connectivity.")
         dt=1

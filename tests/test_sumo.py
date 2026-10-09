@@ -40,3 +40,17 @@ def test_sumo_status_survives_missing_binary():
 
 def test_side_traffic_range():
     assert SimulationRequest(side_traffic_share=.5).side_traffic_share==.5
+
+
+
+def test_sumo_display_indicates_main_approach_only():
+    from app.sumo_runner import _states
+    class FakeTLS:
+        @staticmethod
+        def getRedYellowGreenState(tls):
+            return "rrGG"
+    class FakeConn:
+        trafficlight=FakeTLS()
+    signal={"id":"test", "main_link_indices":[0,1]}
+    assert _states(FakeConn(),[signal]) == ["red"]
+    assert _states(FakeConn(),[{**signal,"main_link_indices":[2,3]}]) == ["green"]
