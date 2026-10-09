@@ -1,6 +1,9 @@
 """Reproducible paired-seed traffic simulation: uncalibrated, research-only."""
 from __future__ import annotations
 import csv
+from concurrent.futures import ProcessPoolExecutor, as_completed
+import multiprocessing
+import os
 from datetime import datetime, timezone
 import hashlib
 import io
@@ -26,7 +29,9 @@ METRICS = {
 
 class ResearchRequest(BaseModel):
     scenario: SimulationRequest
-    seeds: list[int] = Field(default_factory=lambda: [42, 43, 44], min_length=2, max_length=8)
+    seeds: list[int] = Field(default_factory=lambda: [42, 43, 44], min_length=2, max_length=200)
+    workers: int = Field(default=2, ge=1, le=8,
+        description="Concurrent independent SUMO worker processes; capped by server config")
 
     @field_validator("seeds")
     @classmethod
@@ -81,24 +86,66 @@ def summarize(pairs):
     return summary
 
 
+def allowed_workers(requested: int) -> int:
+    """Bound concurrency to avoid exhausting RAM on consumer laptops."""
+    try:
+        cap = int(os.environ.get("ROME_RESEARCH_MAX_WORKERS", "4"))
+    except ValueError:
+        cap = 4
+    return max(1, min(requested, max(1, min(8, cap)), max(1, os.cpu_count() or 1)))
+
+
+def _pair_for_seed(scenario: SimulationRequest, seed: int, simulator=run_sumo) -> dict:
+    """Run matched policies sequentially within one isolated worker process."""
+    baseline = scenario.model_copy(update={"mode": "manual", "overrides": {}, "seed": seed})
+    experiment = scenario.model_copy(update={"seed": seed})
+    before = simulator(baseline, frames=False)
+    after = simulator(experiment, frames=False)
+    return {
+        "seed": seed, "baseline": values_of(before["metrics"]),
+        "experiment": values_of(after["metrics"]),
+        "baseline_warnings": before.get("warnings", []),
+        "experiment_warnings": after.get("warnings", []),
+    }
+
+
 def run_study(design: ResearchRequest, *, simulate=run_sumo, net_path=NET_FILE, progress=None):
-    """Compare a hypothetical zero-offset baseline to selected plan at paired seeds."""
+    """A bounded process pool isolates SUMO TraCI clients and random streams.
+
+    A pair runs in one process; multiple pairs run concurrently, each with
+    its own TraCI connection, SUMO binary and process-local lock.
+    Custom fake simulators run sequentially for deterministic unit tests.
+    """
     pairs, warnings = [], []
-    total = 2 * len(design.seeds)
-    for i, seed in enumerate(design.seeds):
-        baseline = design.scenario.model_copy(
-            update={"mode": "manual", "overrides": {}, "seed": seed})
-        experiment = design.scenario.model_copy(update={"seed": seed})
-        if progress:
-            progress((2*i)/total, f"Seed {seed}: baseline")
-        before = simulate(baseline, frames=False)
-        if progress:
-            progress((2*i+1)/total, f"Seed {seed}: experiment")
-        after = simulate(experiment, frames=False)
-        b, e = values_of(before["metrics"]), values_of(after["metrics"])
-        pairs.append({"seed": seed, "baseline": b, "experiment": e,
-                      "baseline_warnings": before.get("warnings", []),
-                      "experiment_warnings": after.get("warnings", [])})
+    count = len(design.seeds)
+    workers = allowed_workers(design.workers) if simulate is run_sumo else 1
+    if workers == 1:
+        for index, seed in enumerate(design.seeds):
+            if progress:
+                progress(index / count, f"Pair {index + 1}/{count}: SUMO seed {seed}")
+            pairs.append(_pair_for_seed(design.scenario, seed, simulate))
+            if progress:
+                progress((index+1) / count, f"Finished {index + 1}/{count} pairs")
+    else:
+        # Spawn instead of fork: this API process already has live threads.
+        with ProcessPoolExecutor(
+            max_workers=workers,
+            mp_context=multiprocessing.get_context("spawn"),
+        ) as pool:
+            futures = {
+                pool.submit(_pair_for_seed, design.scenario, seed): seed
+                for seed in design.seeds
+            }
+            for future in as_completed(futures):
+                pair = future.result()
+                pairs.append(pair)
+                if progress:
+                    progress(len(pairs) / count,
+                             f"Completed {len(pairs)}/{count} paired seeds · {workers} workers")
+        pairs.sort(key=lambda pair: design.seeds.index(pair["seed"]))
+    for pair in pairs:
+        seed = pair["seed"]
+        b, e = pair["baseline"], pair["experiment"]
         for label, outcome in (("baseline", b), ("experiment", e)):
             if outcome["completion_rate"] is None or outcome["completion_rate"] < .85:
                 warnings.append(f"Seed {seed}, {label}: {outcome['completed']}/"
@@ -107,8 +154,6 @@ def run_study(design: ResearchRequest, *, simulate=run_sumo, net_path=NET_FILE, 
                 warnings.append(f"Seed {seed}, {label}: no signals could be retimed")
         if b["inserted"] != e["inserted"]:
             warnings.append(f"Seed {seed}: inserted vehicle counts differ between policies")
-        if progress:
-            progress((2*i+2)/total, f"Seed {seed} completed")
     if design.scenario.mode == "manual" and not design.scenario.overrides:
         warnings.append("No manual offsets supplied; experiment may equal baseline")
     net = Path(net_path)
@@ -120,6 +165,7 @@ def run_study(design: ResearchRequest, *, simulate=run_sumo, net_path=NET_FILE, 
         "network_sha256": fingerprint,
         "scenario": design.scenario.model_dump(mode="json"),
         "seeds": design.seeds,
+        "parallel_workers": workers,
         "baseline_definition": "manual, all offsets zero; NOT the observed Rome signal plan",
         "pairs": pairs, "summary": summarize(pairs),
         "warnings": list(dict.fromkeys(warnings)),
@@ -151,6 +197,7 @@ def make_markdown(result):
         f"- Export time (UTC): {result['created_at_utc']}",
         f"- SUMO network SHA256: {result['network_sha256'] or 'unknown'}",
         f"- Seeds: {', '.join(map(str, result['seeds']))}",
+        f"- SUMO worker processes: {result['parallel_workers']}",
         f"- Policy under test: {spec['mode']}; corridor: {spec['segment']}",
         f"- Synthetic demand: {spec['demand_vph']} vehicles/h/direction (before hourly factor)",
         f"- Date/hour: {spec['day']}, {spec['hour']:02d}:00",
