@@ -7,4 +7,7 @@ services:
       - "8000:8000"
     volumes:
       - ./data:/service/data
+    environment:
+      TOMTOM_API_KEY: ${TOMTOM_API_KEY:-}
+      ROME_RESEARCH_MAX_WORKERS: ${ROME_RESEARCH_MAX_WORKERS:-4}
     restart: unless-stopped

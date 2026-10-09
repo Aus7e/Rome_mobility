@@ -83,12 +83,46 @@ validation, and safe local caching. After updating your checkout:
 Then reopen http://localhost:8000 and select SUMO. Read
 [Overpass error troubleshooting](docs/OVERPASS_TROUBLESHOOTING.md).
 
+## Optional TomTom typical traffic route reference
+
+You can connect your own TomTom Routing API key without modifying the app code.
+Create a local `.env` in the repository root containing:
+
+```dotenv
+TOMTOM_API_KEY=YOUR_KEY
+ROME_RESEARCH_MAX_WORKERS=4
+```
+
+Keep this file private; never commit credentials. Restart with
+`docker compose up -d --force-recreate`. In the dashboard, click
+**Stima traffico tipico TomTom** for an optional *provider-predicted*
+historical-typical journey time for the selected day-of-week/hour and
+direction. The provider uses a future matching day when a date is in the
+past. The service uses the OSM corridor axis and via points but the
+provider's selected route may not coincide exactly with SUMO's route
+catalog. This result is **not a traffic count**, is **not a raw historical
+observation**, and is deliberately not stored or exported with simulator
+reports. Separate access/subscription terms and possible charges apply.
+
+Use TomTom **Traffic Stats Route Analysis** or **Area Analysis** for
+retrospective aggregated measured/probe-based speeds and travel times
+by time slice, with a suitable licence. Those datasets are distinct
+from this predictive routing endpoint and not yet automatically imported.
+Documentation:
+https://docs.tomtom.com/traffic-stats/documentation/api/route-analysis
+
 ## Research report and paired-seed experiments
 
 Once SUMO is ready, choose an outbound/inbound green wave, set day/hour/demand,
-then click **Studio multi-run (3 seed) + report ZIP**. The lab runs a
+then click **Studio parallelo + report ZIP**. The lab runs a
 hypothetical all-zero-offset baseline and your selected signal policy for
-each of three seeds. After it finishes, it downloads a self-contained ZIP:
+each seed. Configure 2 to 200 seeds and a bounded number of worker processes
+(default 2, maximum 8, additionally restricted by
+`ROME_RESEARCH_MAX_WORKERS` and available CPU cores). Use 20–50 seeds for
+exploratory stability; bigger runs consume significant CPU and RAM.
+The baseline/experiment pair for each seed runs sequentially inside one
+worker process, while independent seeds run in parallel. After the study
+finishes, the app downloads a self-contained ZIP:
 
 - report.md: methodological summary, differences and limits;
 - runs.csv: per-seed metrics and denominators;

@@ -107,6 +107,21 @@ async def weather_history(day: date = Query(...)):
         raise HTTPException(status_code=503, detail="Weather source unavailable: "+str(exc)) from exc
 
 
+@app.get("/api/traffic/typical")
+def typical_route_traffic(day: date, hour: int = Query(ge=0, le=23),
+                          direction: str = Query(pattern="^(outbound|inbound)$")):
+    """Optional traffic-time reference, never a counted or calibrated flow."""
+    from app.traffic_reference import get_typical_traffic
+    from app.sumo_runner import load_network, status
+    if not status()["available"]:
+        raise HTTPException(status_code=503, detail="SUMO OSM network not ready")
+    try:
+        info = load_network("full")
+        return get_typical_traffic(day, hour, direction, network=info)
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
 @app.get("/api/sumo/status")
 def sumo_status():
     from app.sumo_runner import status

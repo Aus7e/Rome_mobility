@@ -63,8 +63,14 @@
         <div class="mini-fields"><div class="field"><label for="duration">Minuti</label><input id="duration" type="number" min="3" max="40" value="12"></div><div class="field"><label for="seed">Seed</label><input id="seed" type="number" min="0" max="1000000" value="42"></div></div>
         <button class="primary action" id="runBtn">▶ Avvia simulazione</button>
         <button class="secondary action" id="compareBtn">⇄ Confronta con baseline</button>
-        <button class="secondary action" id="researchBtn">▤ Studio multi-run (3 seed) + report ZIP</button>
+        <div class="mini-fields">
+          <div class="field"><label for="researchRuns">Seed di ricerca (2–200)</label><input id="researchRuns" type="number" min="2" max="200" step="1" value="30"></div>
+          <div class="field"><label for="researchWorkers">SUMO paralleli (1–8)</label><input id="researchWorkers" type="number" min="1" max="8" step="1" value="2"></div>
+        </div>
+        <button class="secondary action" id="researchBtn">▤ Studio parallelo + report ZIP</button>
         <div class="info-line" id="researchStatus" role="status" aria-live="polite">Report ripetuti disponibili con motore SUMO pronto. Dati simulati, non osservati.</div>
+        <button class="secondary action" id="typicalTrafficBtn">↗ Stima traffico tipico TomTom (API facoltativa)</button>
+        <div class="info-line" id="typicalTrafficStatus" role="status" aria-live="polite">Se configuri TOMTOM_API_KEY, puoi confrontare separatamente una stima esterna dei tempi per fascia oraria.</div>
         <button class="secondary action" id="setupSumoBtn">↻ Riprova preparazione rete SUMO</button>
         <button class="secondary action" id="osmBtn">↓ Importa geometria e semafori OSM</button>
         <p id="message" class="message" role="status" aria-live="polite">Il modello iniziale è dimostrativo, non rappresenta dati di traffico misurati.</p>

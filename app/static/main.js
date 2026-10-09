@@ -394,6 +394,23 @@ async function compare(){
   }catch(e){flash(e.message,true);}
   finally{$("compareBtn").disabled=false;}
 }
+async function lookupTypicalTraffic(){
+  const button=$("typicalTrafficBtn");
+  button.disabled=true;
+  $("typicalTrafficStatus").textContent="Recupero della previsione di traffico tipico...";
+  try{
+    const direction=$("mode").value==="wave_inbound"?"inbound":"outbound";
+    const query=new URLSearchParams({day:$("day").value,hour:String($("hour").value),direction});
+    const result=await api("/api/traffic/typical?"+query.toString());
+    const m=(result.travel_time_typical_s/60).toFixed(1);
+    const free=result.travel_time_freeflow_s==null?"n.d.":(result.travel_time_freeflow_s/60).toFixed(1);
+    $("typicalTrafficStatus").textContent="TomTom · "+(direction==="inbound"?"verso Centro":"verso GRA")+
+      " · stima tipica "+m+" min (senza congestione "+free+" min) · partenza "+
+      result.prediction_departure+" · Itinerario del provider; NON è una misura dei veicoli e NON coincide con le OD miste di SUMO.";
+  }catch(e){
+    $("typicalTrafficStatus").textContent="TomTom non disponibile: "+e.message+" · I risultati SUMO restano utilizzabili.";
+  }finally{button.disabled=false;}
+}
 async function runResearch(){
   $("researchBtn").disabled=true;
   state.engineChosen=true;
@@ -405,12 +422,17 @@ async function runResearch(){
       throw new Error("Scegli Onda verde → GRA o Onda verde → Centro, oppure imposta offset manuali");
     }
     const first=+$("seed").value;
-    if(first>999998)throw new Error("Usa un seed iniziale non superiore a 999998");
-    const experiment={scenario:params(),seeds:[first,first+1,first+2]};
+    if(first<0)throw new Error("Il seed iniziale non può essere negativo");
+    const runs=Number($("researchRuns").value);
+    const workers=Number($("researchWorkers").value);
+    if(!Number.isInteger(runs)||runs<2||runs>200)throw new Error("Numero di seed richiesto: da 2 a 200");
+    if(!Number.isInteger(workers)||workers<1||workers>8)throw new Error("Numero di worker richiesto: da 1 a 8");
+    if(first+runs-1>1000000)throw new Error("Riduci il primo seed: massimo 1.000.000");
+    const experiment={scenario:params(),seeds:Array.from({length:runs},(_,i)=>first+i),workers};
     const job=await api("/api/research/jobs",{method:"POST",body:JSON.stringify(experiment)});
     const output=await waitForJob(job);
     const delay=output.summary.avg_delay_s;
-    $("researchStatus").textContent="Studio completato · "+output.seeds.length+" coppie di simulazioni · differenza ritardo medio: "+
+    $("researchStatus").textContent="Studio completato · "+output.seeds.length+" coppie / "+output.parallel_workers+" processi · differenza ritardo medio: "+
       (delay.mean_delta===null?"n.d.":delay.mean_delta+" s")+" · "+
       (output.warnings.length?output.warnings.length+" avvertenze":"nessuna avvertenza")+
       " · Risultato teorico, non misurato sul campo.";
@@ -480,6 +502,7 @@ function init(){
   $("runBtn").addEventListener("click",run);
   $("compareBtn").addEventListener("click",compare);
   $("researchBtn").addEventListener("click",runResearch);
+  $("typicalTrafficBtn").addEventListener("click",lookupTypicalTraffic);
   $("osmBtn").addEventListener("click",refreshOSM);
   $("weatherBtn").addEventListener("click",getWeather);
   $("exportBtn").addEventListener("click",saveReport);
