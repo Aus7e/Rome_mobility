@@ -39,11 +39,11 @@
 
         <div class="route-card" aria-label="Percorso da analizzare">
           <div class="route-stops">
-            <div class="route-stop"><span class="stop-circle start"></span><div><small>PARTENZA</small><strong>Prati Fiscali, Roma</strong></div></div>
+            <div class="route-stop"><span class="stop-circle start"></span><div><small>PARTENZA</small><strong id="routeStartLabel">Prati Fiscali, Roma</strong></div></div>
             <div class="route-connector" aria-hidden="true"></div>
-            <div class="route-stop"><span class="stop-pin end"></span><div><small>ARRIVO</small><strong>Grande Raccordo Anulare</strong></div></div>
+            <div class="route-stop"><span class="stop-pin end"></span><div><small>ARRIVO</small><strong id="routeEndLabel">Grande Raccordo Anulare</strong></div></div>
           </div>
-          <div class="route-distance"><span>Via Salaria</span><strong id="routeDistance">— km</strong></div>
+          <div class="route-distance"><span id="routeAreaLabel">Via Salaria</span><strong id="routeDistance">— km</strong></div>
           <div class="field compact-field">
             <label for="area">Area della simulazione</label>
             <select id="area">
@@ -51,6 +51,7 @@
               <option value="nord_est">Roma Nord-Est · rete estesa</option>
             </select>
           </div>
+          <button type="button" id="regionPrepareBtn" class="primary action region-prepare" hidden>↓ Prepara rete Roma Nord-Est</button>
           <div class="field compact-field" id="segmentField">
             <label for="segment">Tratto da analizzare</label>
             <select id="segment">

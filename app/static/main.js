@@ -178,9 +178,16 @@ function lightModel(sig){
     const b=new THREE.Mesh(new THREE.SphereGeometry(.24,10,8),new THREE.MeshStandardMaterial({color,emissive:0x080808,emissiveIntensity:0}));
     b.position.set(0,5.76-i*.72,.43);group.add(b);bulbs.push(b);
   }
-  const loc=positionAt(sig.s_m);
-  const sideways=new THREE.Vector3(-loc.tangent.z,0,loc.tangent.x);
-  group.position.copy(loc.point).addScaledVector(sideways,4.1);
+  if(state.network.regional){
+    const [lat0,lon0]=state.network.points[0];
+    const cos=Math.cos(lat0*Math.PI/180);
+    group.position.set((sig.lon-lon0)*111195*cos/SCALE,0,
+                       -(sig.lat-lat0)*111195/SCALE);
+  }else{
+    const loc=positionAt(sig.s_m);
+    const sideways=new THREE.Vector3(-loc.tangent.z,0,loc.tangent.x);
+    group.position.copy(loc.point).addScaledVector(sideways,4.1);
+  }
   state.road.add(group);
   return bulbs;
 }
@@ -236,8 +243,16 @@ function drawNetwork(){
     building.position.y=h/2-.5;state.road.add(building);
   }
   const middle=positionAt(state.network.length_m/2).point;
+  if(state.network.regional && state.network.area_bbox){
+    const [south,west,north,east]=state.network.area_bbox;
+    const [lat0,lon0]=state.network.points[0];
+    const cos=Math.cos(lat0*Math.PI/180);
+    middle.set(((west+east)/2-lon0)*111195*cos/SCALE,0,
+               -((south+north)/2-lat0)*111195/SCALE);
+  }
   state.controls.target.copy(middle);
-  state.camera.position.copy(middle).add(new THREE.Vector3(120,185,220));
+  state.camera.position.copy(middle).add(state.network.regional?
+    new THREE.Vector3(700,1750,1700):new THREE.Vector3(120,185,220));
   state.camera.near=.1;state.camera.far=5000;state.camera.updateProjectionMatrix();state.controls.update();
   for(const c of state.cars.values())state.scene.remove(c);state.cars.clear();
 }
@@ -389,6 +404,9 @@ async function refreshSumoStatus(){
   const area=$("area").value;
   const s=await api("/api/sumo/status?area="+area);
   const job=s.setup, preparing=job&&["queued","running"].includes(job.status);
+  $("regionPrepareBtn").hidden=area!=="nord_est"||s.available;
+  $("regionPrepareBtn").disabled=Boolean(preparing);
+  $("regionPrepareBtn").textContent=preparing?"◌ Preparazione rete regionale in corso":"↓ Prepara rete Roma Nord-Est";
   if(s.available){
     $("sumoStatus").textContent="● SUMO pronto · "+(area==="nord_est"?"rete regionale":"rete Salaria");
     if(area==="nord_est" && state.loadedArea!==area && !$("runBtn").disabled){
@@ -758,8 +776,12 @@ function init(){
     }
   });
   $("setupSumoBtn").addEventListener("click",setupSumo);
+  $("regionPrepareBtn").addEventListener("click",setupSumo);
   $("area").addEventListener("change",async()=>{
     const regional=$("area").value==="nord_est";
+    $("routeAreaLabel").textContent=regional?"Roma Nord-Est · area estesa":"Via Salaria";
+    $("routeStartLabel").textContent=regional?"Roma Nord-Est":"Prati Fiscali, Roma";
+    $("routeEndLabel").textContent=regional?"Salaria · Nomentana · Tiburtina":"Grande Raccordo Anulare";
     $("segmentField").hidden=regional;
     $("segment").value="full";
     if(regional){

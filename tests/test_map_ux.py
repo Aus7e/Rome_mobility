@@ -92,3 +92,14 @@ def test_area_picker_and_volatile_tomtom_key_modal():
     assert 'api_key:key' in script
     assert "localStorage" not in script
     assert "sessionStorage" not in script
+
+
+def test_regional_preparation_has_visible_action_and_separate_status():
+    html=(STATIC / "index.html").read_text()
+    js=(STATIC / "main.js").read_text()
+    assert 'id="regionPrepareBtn"' in html
+    assert 'id="routeAreaLabel"' in html
+    assert 'id="routeStartLabel"' in html
+    assert 'id="routeEndLabel"' in html
+    assert 'regionPrepareBtn' in js
+    assert 'showRegionalStudyExtent' in js

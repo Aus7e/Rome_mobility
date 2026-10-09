@@ -244,3 +244,7 @@ input[type=range]{accent-color:var(--blue);width:100%;margin:4px 0;min-height:22
 .dialog-actions .dialog-submit{background:#2467e8;color:#fff;border-color:#2467e8;margin-left:auto}
 @media(max-width:810px){.tomtom-header-key{padding:8px;font-size:10px}.top-actions{gap:5px}}
 @media(max-width:420px){.tomtom-header-key{font-size:9px;padding:7px 5px}}
+
+.region-prepare{background:#0f69e5;color:#fff;border-color:#0f69e5;
+  padding:13px 12px;margin:12px 0}
+.route-card .region-prepare[hidden]{display:none}
