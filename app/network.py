@@ -78,7 +78,7 @@ def demo_network():
     }
 
 
-def extract_osm(raw):
+def extract_osm(raw, min_component_nodes=8):
     elements = raw.get("elements", [])
     nodes = {}
     graph = defaultdict(list)
@@ -114,7 +114,7 @@ def extract_osm(raw):
                 if v not in visited:
                     visited.add(v)
                     stack.append(v)
-        if len(component) < 8:
+        if len(component) < min_component_nodes:
             continue
         south = min(component, key=lambda n: meters(nodes[n], START))
         north = min(component, key=lambda n: meters(nodes[n], END))

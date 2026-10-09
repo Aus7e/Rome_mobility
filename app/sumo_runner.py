@@ -85,7 +85,8 @@ def _axis_from_sumo(net):
                         "geometry":[{"lat":loc[0],"lon":loc[1]} for loc in
                                     (_to_latlon(net, x, y,geo) for x,y in coords)]})
     try:
-        path=extract_osm({"elements":elements})
+        # netconvert collapses straight intermediate road nodes.
+        path=extract_osm({"elements":elements},min_component_nodes=2)
         path["quality"]="SUMO roadway centerline derived from OSM import; signals from TLS controllers"
         path["source"]="sumo_osm"
         return path
