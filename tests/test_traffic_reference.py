@@ -107,3 +107,45 @@ def test_optional_api_requires_sumo_ready(monkeypatch):
         "day": "2026-10-14", "hour": 8, "direction": "outbound"
     })
     assert response.status_code == 503
+
+
+
+def test_tomtom_key_from_screen_is_per_request_and_not_saved(monkeypatch):
+    import app.traffic_reference as module
+    monkeypatch.delenv("TOMTOM_API_KEY", raising=False)
+    monkeypatch.setenv("TOMTOM_API_KEY", "")
+    calls=[]
+    def handler(request):
+        calls.append(request)
+        assert request.url.params["key"] == "ON_SCREEN_ONLY_SECRET"
+        return httpx.Response(200,json={"routes":[{"summary":{
+            "historicTrafficTravelTimeInSeconds":900,
+            "noTrafficTravelTimeInSeconds":610,
+            "travelTimeInSeconds":890,
+            "lengthInMeters":7900
+        }}]})
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result=get_typical_traffic(
+            date(2026,10,14),8,"outbound",network=OSM_INFO,
+            client=client,api_key="ON_SCREEN_ONLY_SECRET",
+            now=datetime(2026,10,10,9,tzinfo=ROME))
+    assert result["travel_time_typical_s"] == 900
+    assert "ON_SCREEN_ONLY_SECRET" not in str(result)
+    assert len(calls)==1
+
+
+def test_screen_key_post_is_accepted_with_local_sumo(monkeypatch):
+    from app import sumo_runner, traffic_reference
+    monkeypatch.setattr(sumo_runner,"status",lambda area="salaria":{"available":True})
+    monkeypatch.setattr(sumo_runner,"load_network",lambda segment, net_path=None:OSM_INFO)
+    received=[]
+    def stub(day,hour,direction,*,network,api_key=None,**kwargs):
+        received.append(api_key)
+        return {"provider":"TomTom","evidence_type":"PROVIDER_PREDICTION_NOT_OBSERVED_MEASUREMENT"}
+    monkeypatch.setattr(traffic_reference,"get_typical_traffic",stub)
+    response=TestClient(app).post("/api/traffic/typical",json={
+        "day":"2026-10-14","hour":8,"direction":"outbound",
+        "api_key":"PER_REQUEST_TEST_ONLY"})
+    assert response.status_code==200
+    assert received == ["PER_REQUEST_TEST_ONLY"]
+    assert "PER_REQUEST_TEST_ONLY" not in response.text

@@ -77,3 +77,18 @@ def test_map_does_not_require_external_google_services_or_frontend_cdns():
     assert "maps.googleapis.com" not in js + html
     assert "fonts.googleapis" not in css
     assert 'import' in (STATIC / "main.js").read_text()
+
+
+
+def test_area_picker_and_volatile_tomtom_key_modal():
+    html=(STATIC / "index.html").read_text()
+    script=(STATIC / "main.js").read_text()
+    assert 'id="area"' in html
+    assert 'value="nord_est"' in html
+    assert 'id="tomtomApiKey"' in html
+    assert 'type="password"' in html
+    assert 'id="tomtomDialog"' in html
+    assert "/api/traffic/typical" in script
+    assert 'api_key:key' in script
+    assert "localStorage" not in script
+    assert "sessionStorage" not in script
