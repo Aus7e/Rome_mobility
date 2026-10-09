@@ -2,15 +2,17 @@
 """FastAPI service. /api/refresh-osm and weather endpoint access public external sources."""
 from contextlib import asynccontextmanager
 from datetime import date
+import io
 import os
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 import httpx
 
 from app.engine import simulate
+from app.research import ResearchRequest
 from app.models import SimulationRequest
 from app.network import ROOT, current_network, refresh_osm, subset_network
 
@@ -174,6 +176,37 @@ def sumo_compare_job(request: SimulationRequest):
         return submit("compare",request)
     except RuntimeError as exc:
         raise HTTPException(status_code=429,detail=str(exc)) from exc
+
+
+@app.post("/api/research/jobs", status_code=202)
+def research_job(design: ResearchRequest):
+    from app.sumo_jobs import submit
+    from app.sumo_runner import status
+    ready = status()
+    if not ready["available"]:
+        raise HTTPException(status_code=503, detail=_missing_sumo_components(ready))
+    try:
+        return submit("research", design)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+
+
+@app.get("/api/research/jobs/{job_id}/download")
+def research_download(job_id: str):
+    from app.research import make_zip
+    from app.sumo_jobs import info, result
+    try:
+        job = info(job_id)
+        if job["kind"] != "research":
+            raise HTTPException(status_code=404, detail="Not a research job")
+        data = result(job_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Research job not found") from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return StreamingResponse(io.BytesIO(make_zip(data)), media_type="application/zip",
+                             headers={"Content-Disposition":
+                                      'attachment; filename="salaria-research.zip"'})
 
 
 @app.get("/api/sumo/jobs/{job_id}")

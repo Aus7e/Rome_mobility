@@ -394,6 +394,36 @@ async function compare(){
   }catch(e){flash(e.message,true);}
   finally{$("compareBtn").disabled=false;}
 }
+async function runResearch(){
+  $("researchBtn").disabled=true;
+  state.engineChosen=true;
+  $("researchStatus").textContent="Preparazione studio scientifico...";
+  try{
+    const status=await api("/api/sumo/status");
+    if(!status.available)throw new Error("Motore SUMO non pronto: attendi la preparazione automatica");
+    if($("mode").value==="manual" && !Object.keys(state.overrides).length){
+      throw new Error("Scegli Onda verde → GRA o Onda verde → Centro, oppure imposta offset manuali");
+    }
+    const first=+$("seed").value;
+    if(first>999998)throw new Error("Usa un seed iniziale non superiore a 999998");
+    const experiment={scenario:params(),seeds:[first,first+1,first+2]};
+    const job=await api("/api/research/jobs",{method:"POST",body:JSON.stringify(experiment)});
+    const output=await waitForJob(job);
+    const delay=output.summary.avg_delay_s;
+    $("researchStatus").textContent="Studio completato · "+output.seeds.length+" coppie di simulazioni · differenza ritardo medio: "+
+      (delay.mean_delta===null?"n.d.":delay.mean_delta+" s")+" · "+
+      (output.warnings.length?output.warnings.length+" avvertenze":"nessuna avvertenza")+
+      " · Risultato teorico, non misurato sul campo.";
+    const link=document.createElement("a");
+    link.href="/api/research/jobs/"+encodeURIComponent(job.id)+"/download";
+    link.download="salaria-research.zip";
+    document.body.append(link);link.click();link.remove();
+    flash("Studio multi-seed completato · ZIP con CSV, JSON e relazione metodologica.");
+  }catch(e){
+    $("researchStatus").textContent="Studio non eseguito: "+e.message;
+    flash(e.message,true);
+  }finally{$("researchBtn").disabled=false;}
+}
 function saveReport(){
   if(!state.simulation){flash("Esegui prima una simulazione.",true);return;}
   const report={parameters:params(),network:{source:state.network.source,quality:state.network.quality,length_m:state.network.length_m,signals:state.network.signals},results:state.simulation.metrics,comparison:state.comparison,limitations:state.simulation.limitations};
@@ -449,6 +479,7 @@ function init(){
   $("segment").addEventListener("change",()=>getNetwork().then(run).catch(e=>flash(e.message,true)));
   $("runBtn").addEventListener("click",run);
   $("compareBtn").addEventListener("click",compare);
+  $("researchBtn").addEventListener("click",runResearch);
   $("osmBtn").addEventListener("click",refreshOSM);
   $("weatherBtn").addEventListener("click",getWeather);
   $("exportBtn").addEventListener("click",saveReport);
