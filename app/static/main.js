@@ -9,7 +9,7 @@ const $ = (id) => document.getElementById(id);
 const ids = ["hour","rain","speed","demand","sideTraffic"];
 const state = { viewMode:"map", inventory:null, observations:null, engineChosen:false, promoted:false, network:null, simulation:null, comparison:null, overrides:{}, playing:true, frame:0, lastTick:0, renderer:null, scene:null, controls:null, camera:null, cars:new Map(), lights:[], road:null, path:null, rain:null };
 const SCALE = 8;
-let tomtomKey = ""; // Volatile tab memory only: no localStorage, cookies or URL params.
+let tomtomKey = ""; // Volatile key in this browser tab only, never persisted.
 let tomtomResolve = null;
 const palette = [0x63d7c2,0x92b6fc,0xf1c370,0xd0dce9,0xdd858d,0x95c9dd];
 

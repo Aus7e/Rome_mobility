@@ -124,7 +124,12 @@ def load_network(segment="full", net_path=NET_FILE):
         shape=[_to_latlon(net,x,y,geo) for x,y in edge.getShape()]
         if not shape:
             continue
-        near,s=closest_fraction(shape[len(shape)//2],axis["points"])
+        if regional and "salaria" not in (edge.getName() or "").lower():
+            # Avoid O(number of regional edges * axis vertices) GIS projection
+            # on every local street: s is unused for regional cross-city OD.
+            near, s = 1000.0, axis["length_m"] / 2
+        else:
+            near,s=closest_fraction(shape[len(shape)//2],axis["points"])
         if not regional and (near>340 or s<0 or s>axis["length_m"]):
             continue
         center = shape[len(shape)//2]
