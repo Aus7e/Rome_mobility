@@ -117,13 +117,26 @@ def sumo_setup():
         raise HTTPException(status_code=429,detail=str(exc)) from exc
 
 
+def _missing_sumo_components(ready: dict) -> str:
+    missing = []
+    if not ready.get("installed"):
+        missing.append("eseguibile SUMO")
+    if not ready.get("python_modules"):
+        missing.append("librerie Python traci/sumolib")
+    if not ready.get("network_ready"):
+        missing.append("rete OSM/SUMO della Salaria")
+    return ("SUMO non pronto: manca " + ", ".join(missing)
+            + ". Premi «Prepara rete reale SUMO» per scaricare la mappa, "
+              "oppure esegui python scripts/bootstrap_sumo.py nel container.")
+
+
 @app.post("/api/sumo/jobs",status_code=202)
 def sumo_job(request: SimulationRequest):
     from app.sumo_jobs import submit
     from app.sumo_runner import status
     ready=status()
     if not ready["available"]:
-        raise HTTPException(status_code=503,detail="Install SUMO/traci and import network via /api/sumo/setup")
+        raise HTTPException(status_code=503,detail=_missing_sumo_components(ready))
     try:
         return submit("run",request)
     except RuntimeError as exc:
@@ -134,8 +147,9 @@ def sumo_job(request: SimulationRequest):
 def sumo_compare_job(request: SimulationRequest):
     from app.sumo_jobs import submit
     from app.sumo_runner import status
-    if not status()["available"]:
-        raise HTTPException(status_code=503,detail="SUMO runtime/network unavailable")
+    ready = status()
+    if not ready["available"]:
+        raise HTTPException(status_code=503,detail=_missing_sumo_components(ready))
     try:
         return submit("compare",request)
     except RuntimeError as exc:

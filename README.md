@@ -54,6 +54,19 @@ Read [technical SUMO guide](docs/SUMO_MODE.md) and [source register](docs/DATA_S
 SUMO test coverage includes a synthetic-but-georeferenced OSM network with actual
 netconvert and TraCI execution in GitHub Actions.
 
+## If the map download shows HTTP 406
+
+The initial Overpass import can be blocked by the provider. The downloader now
+uses a clear User-Agent, alternative global OSM Overpass providers, XML
+validation, and safe local caching. After updating your checkout:
+
+    git pull origin main
+    docker compose up --build -d
+    docker compose exec salaria-lab python scripts/bootstrap_sumo.py
+
+Then reopen http://localhost:8000 and select SUMO. Read
+[Overpass error troubleshooting](docs/OVERPASS_TROUBLESHOOTING.md).
+
 ## Reproducible API
 
 - GET /health
