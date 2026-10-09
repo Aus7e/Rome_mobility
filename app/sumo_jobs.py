@@ -7,6 +7,7 @@ from threading import RLock
 from uuid import uuid4
 
 from app.models import SimulationRequest
+from app.research import ResearchRequest, run_study
 from app.network import ROOT
 from app.sumo_runner import run_sumo
 
@@ -48,9 +49,11 @@ def latest_setup():
 
 
 def submit(kind,request=None):
-    if kind not in {"setup","run","compare"}:
+    if kind not in {"setup","run","compare","research"}:
         raise ValueError("Unsupported job type")
-    if kind!="setup" and not isinstance(request,SimulationRequest):
+    if kind=="research" and not isinstance(request,ResearchRequest):
+        raise ValueError("ResearchRequest required")
+    if kind not in {"setup","research"} and not isinstance(request,SimulationRequest):
         raise ValueError("SimulationRequest required")
     with _LOCK:
         if kind == "setup":
@@ -99,6 +102,8 @@ def _execute(jid,kind,request):
             progress(.98, "SUMO network prepared")
         elif kind=="run":
             data=run_sumo(request,progress=progress)
+        elif kind=="research":
+            data=run_study(request,progress=progress)
         else:
             baseline=request.model_copy(update={"mode":"manual","overrides":{}})
             def first(p,msg):progress(p*.48,"Baseline: "+msg)

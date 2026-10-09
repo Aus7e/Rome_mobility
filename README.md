@@ -83,6 +83,23 @@ validation, and safe local caching. After updating your checkout:
 Then reopen http://localhost:8000 and select SUMO. Read
 [Overpass error troubleshooting](docs/OVERPASS_TROUBLESHOOTING.md).
 
+## Research report and paired-seed experiments
+
+Once SUMO is ready, choose an outbound/inbound green wave, set day/hour/demand,
+then click **Studio multi-run (3 seed) + report ZIP**. The lab runs a
+hypothetical all-zero-offset baseline and your selected signal policy for
+each of three seeds. After it finishes, it downloads a self-contained ZIP:
+
+- report.md: methodological summary, differences and limits;
+- runs.csv: per-seed metrics and denominators;
+- paired_differences.csv: differences within matched seeds;
+- experiment.json: scenario inputs, network SHA-256 and warnings.
+
+These are **uncalibrated simulation outputs**, not counts or travel times
+observed on Via Salaria. Completed-trip means are especially sensitive to
+unfinished trips at the simulation cutoff. See
+[research methodology](docs/RESEARCH_METHOD.md).
+
 ## Reproducible API
 
 - GET /health
