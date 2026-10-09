@@ -1,0 +1,12 @@
+
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.venv/
+.env
+data/cache/
+data/raw/
+data/sumo/
+results/
+*.pyc
+.DS_Store
