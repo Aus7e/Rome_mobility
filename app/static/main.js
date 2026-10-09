@@ -265,7 +265,11 @@ function setup3D(){
     state.scene=scene;state.camera=camera;state.renderer=renderer;state.controls=controls;
     const resize=()=>{if(!host.clientWidth||!host.clientHeight)return;renderer.setSize(host.clientWidth,host.clientHeight);camera.aspect=host.clientWidth/host.clientHeight;camera.updateProjectionMatrix();};
     new ResizeObserver(resize).observe(host);resize();
-  }catch(error){$("renderError").hidden=false;flash("Renderer 3D non disponibile: "+error.message,true);}
+  }catch(error){
+    $("renderError").hidden=false;
+    flash("Renderer 3D non disponibile: "+error.message+". Puoi continuare con la mappa.",true);
+    setViewMode("map");
+  }
 }
 function makeCar(id,direction){
   const group=new THREE.Group();
@@ -638,6 +642,7 @@ function setupMapInteractions(){
   }
   $("hour").addEventListener("input",updateTimePresets);
   updateTimePresets();
+  $("mobileRunBtn").addEventListener("click",()=>$("runBtn").click());
   $("mobilePanelToggle").addEventListener("click",()=>{
     const open=$("controlPanel").classList.toggle("is-open");
     $("mobilePanelToggle").setAttribute("aria-expanded",String(open));

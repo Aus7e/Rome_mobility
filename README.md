@@ -35,6 +35,42 @@ For developers running without Docker: install SUMO and Python dependencies;
 also provide the local frontend vendor assets under `app/static/vendor`
 using Three.js 0.165.0. The supported one-command deployment is Docker.
 
+## Map-first interface (October 2026)
+
+The redesigned interface prioritizes an interactive **OpenStreetMap map of the
+Salaria corridor**, visible from the moment the app opens. It borrows familiar
+navigation patterns (search bar, route overview, draggable/zoomable street
+map, direction labels and an unobtrusive results tray) without using Google
+Maps assets, copying Google branding, or implying Google traffic data.
+
+- Choose the **date and time**, optionally tap a quick time preset (08/13/18),
+  select **manual / green wave towards GRA / green wave towards Centro**,
+  then click **Avvia simulazione**.
+- Cars are replayed on the map and coloured by **simulated vehicle speed**.
+  These coloured dots are NOT live congestion or observed road speed.
+- Click a traffic signal to inspect its SUMO/OSM evidence or search among
+  **locally loaded** junction names and signal IDs (not global geocoding).
+- Click **3D** to switch to the existing animated Three.js view; map is the
+  default, so the 3D renderer is created only if it is requested.
+- Expand **Parametri avanzati**, **Semafori**, **Dati di traffico** or
+  **Laboratorio di ricerca** when those workflows are needed. All previous
+  experimental APIs, imports and multi-run exports remain available.
+- On narrow screens open **Parametri** to use the drawer, or tap the floating
+  **Simula** button to run the current settings.
+- Expand **Mostra analisi dettagliata** for the queue chart and baseline
+  comparison. KPI figures remain clearly classified as simulated.
+
+The Leaflet library and its styles are bundled **locally in Docker**, like
+Three.js. Street-map raster tiles are retrieved by the browser **only for
+the map currently on screen**, subject to the
+[OpenStreetMap tile usage policy](https://operations.osmfoundation.org/policies/tiles/).
+Attribution is visible inside the map, no prefetch/bulk-download is used,
+and browser HTTP caching/referer policies are respected. On offline devices
+the cartographic tile background may be blank, while the locally known
+route/signal/vehicle overlays still render. For scaled or commercial usage,
+choose a suitable licensed tile provider rather than relying on OSM's
+community tile servers.
+
 In the browser:
 
 - Select day/date, hour, rain intensity, base demand and speed.
