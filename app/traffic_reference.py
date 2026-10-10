@@ -73,7 +73,9 @@ def get_typical_traffic(day: date, hour: int, direction: str, *,
         "travelMode": "car",
         "departAt": selected.isoformat(),
         "computeTravelTimeFor": "all",
-        "routeRepresentation": "none",
+        # TomTom v1 rejects "none" unless computeBestOrder=true.
+        # Keep fixed Salaria waypoint ordering and request only summary data.
+        "routeRepresentation": "summaryOnly",
     }
     owns_client = client is None
     if owns_client:
