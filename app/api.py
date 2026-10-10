@@ -13,6 +13,7 @@ import httpx
 
 from app.engine import simulate
 from app.research import ResearchRequest
+from app.auto_study import AutoStudyRequest, study_periods
 from app.models import SimulationRequest
 from app.areas import AREAS, network_path, osm_path
 from pydantic import BaseModel, Field, SecretStr
@@ -304,6 +305,62 @@ def research_job(design: ResearchRequest):
         return submit("research", design)
     except RuntimeError as exc:
         raise HTTPException(status_code=429, detail=str(exc)) from exc
+
+
+@app.post("/api/auto-study/jobs",status_code=202)
+def start_auto_study(request: AutoStudyRequest):
+    from app.sumo_runner import status
+    from app.sumo_jobs import submit
+    for area in ("salaria",request.scenario.area):
+        if not status(area)["available"]:
+            raise HTTPException(status_code=503,detail=f"Prepare SUMO area {area} first")
+    if request.scenario.traffic_source=="hourly_counts":
+        from app.observations import demand_for
+        missing=[]
+        for period in study_periods(request.scenario):
+            try:
+                demand_for(date.fromisoformat(period["date"]),period["hour"])
+            except ValueError:
+                missing.append(period["id"])
+        if missing:
+            raise HTTPException(status_code=422,
+                detail="Missing hourly input traffic for: "+", ".join(missing))
+    try:
+        return submit("auto",request)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=429,detail=str(exc)) from exc
+
+
+@app.get("/api/auto-study/current")
+def auto_study_current():
+    from app.sumo_jobs import latest_auto_study
+    job=latest_auto_study()
+    return {"active":bool(job and job["status"] in {"queued","running"}),
+            "job":job}
+
+
+@app.get("/api/auto-study/reports/latest")
+def latest_auto_study_report():
+    directory=ROOT/"data"/"reports"
+    reports=sorted(directory.glob("automatic-*.zip"),
+                   key=lambda p:p.stat().st_mtime,reverse=True) if directory.is_dir() else []
+    if not reports:return {"available":False}
+    name=reports[0].stem.removeprefix("automatic-")
+    return {"available":True,"download_url":"/api/auto-study/reports/"+name+"/download"}
+
+
+@app.get("/api/auto-study/reports/{job_id}/download")
+def auto_study_report_download(job_id: str):
+    from uuid import UUID
+    try:
+        if str(UUID(job_id))!=job_id:raise ValueError("Invalid UUID")
+    except ValueError as exc:
+        raise HTTPException(status_code=404,detail="Report not found") from exc
+    path=ROOT/"data"/"reports"/("automatic-"+job_id+".zip")
+    if not path.is_file():
+        raise HTTPException(status_code=404,detail="Report not ready")
+    return FileResponse(path,media_type="application/zip",
+                        filename="rome-mobility-500-simulations.zip")
 
 
 @app.get("/api/research/jobs/{job_id}/download")

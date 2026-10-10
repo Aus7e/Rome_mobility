@@ -657,6 +657,90 @@ async function runResearch(){
     flash(e.message,true);
   }finally{$("researchBtn").disabled=false;}
 }
+/* Right-side research action: key remains only in tab memory.
+   Completed reports persist in the Docker data volume without credentials. */
+let autoJobPolling=false;
+async function pollAutoJob(job){
+  if(autoJobPolling)return;
+  autoJobPolling=true;
+  $("autoStudyBtn").disabled=true;
+  $("autoStudyDetails").hidden=false;
+  $("autoStudyDownload").hidden=true;
+  $("autoStudyTitle").textContent="Ottimizzazione: 500 simulazioni";
+  try{
+    while(true){
+      const snapshot=await api("/api/sumo/jobs/"+encodeURIComponent(job.id));
+      const percent=Math.round((snapshot.progress||0)*100);
+      $("autoStudyProgress").style.width=percent+"%";
+      $("autoStudyMessage").textContent=(snapshot.message||"In esecuzione")+" · "+percent+"%";
+      if(snapshot.status==="failed")throw new Error(snapshot.message||"Studio interrotto");
+      if(snapshot.status==="complete"){
+        const result=await api("/api/sumo/jobs/"+encodeURIComponent(job.id)+"/result");
+        $("autoStudyTitle").textContent="Studio concluso · 500 run";
+        $("autoStudyMessage").textContent="TomTom "+result.tomtom_success+
+          "/20; miglioramenti su seed separati "+result.quality.accepted_periods+
+          "/10 fasce. Sono risultati simulati e non una taratura reale.";
+        $("autoStudyDownload").href=result.download_url;
+        $("autoStudyDownload").hidden=false;
+        const anchor=document.createElement("a");
+        anchor.href=result.download_url;
+        anchor.download="rome-mobility-500-simulations.zip";
+        document.body.append(anchor);anchor.click();anchor.remove();
+        break;
+      }
+      await new Promise(resolve=>setTimeout(resolve,2500));
+    }
+  }catch(e){
+    $("autoStudyTitle").textContent="Studio non completato";
+    $("autoStudyMessage").textContent=e.message;
+    flash(e.message,true);
+  }finally{
+    autoJobPolling=false;$("autoStudyBtn").disabled=false;
+  }
+}
+async function runAutoStudy(){
+  if(autoJobPolling)return;
+  $("autoStudyBtn").disabled=true;
+  $("autoStudyDetails").hidden=false;
+  $("autoStudyTitle").textContent="Preparazione studio automatico";
+  $("autoStudyMessage").textContent="Controllo rete e riferimenti TomTom";
+  $("autoStudyProgress").style.width="0%";
+  try{
+    const key=await showTomTomKeyDialog();
+    if(!key){$("autoStudyMessage").textContent="Serve una chiave TomTom Routing.";return;}
+    const area=$("area").value;
+    const status=await api("/api/sumo/status?area="+encodeURIComponent(area));
+    if(!status.available)throw new Error("Prepara prima la rete SUMO "+area);
+    const salaria=await api("/api/sumo/status?area=salaria");
+    if(!salaria.available)throw new Error("Rete Salaria necessaria per il riferimento TomTom");
+    const job=await api("/api/auto-study/jobs",{
+      method:"POST",
+      body:JSON.stringify({scenario:params(),api_key:key,
+          workers:Number($("researchWorkers").value)||2})
+    });
+    await pollAutoJob(job);
+  }catch(e){
+    $("autoStudyTitle").textContent="Impossibile avviare lo studio";
+    $("autoStudyMessage").textContent=e.message;
+    flash(e.message,true);
+  }finally{
+    if(!autoJobPolling)$("autoStudyBtn").disabled=false;
+  }
+}
+async function restoreAutoStudy(){
+  try{
+    const existing=await api("/api/auto-study/current");
+    if(existing.active){pollAutoJob(existing.job);return;}
+    const latest=await api("/api/auto-study/reports/latest");
+    if(latest.available){
+      $("autoStudyDetails").hidden=false;
+      $("autoStudyTitle").textContent="Ultimo report disponibile";
+      $("autoStudyMessage").textContent="Il report resta scaricabile dopo aver riaperto la pagina.";
+      $("autoStudyDownload").href=latest.download_url;
+      $("autoStudyDownload").hidden=false;
+    }
+  }catch(_){}
+}
 function saveReport(){
   if(!state.simulation){flash("Esegui prima una simulazione.",true);return;}
   const report={parameters:params(),network:{source:state.network.source,quality:state.network.quality,length_m:state.network.length_m,signals:state.network.signals},results:state.simulation.metrics,comparison:state.comparison,limitations:state.simulation.limitations};
@@ -838,6 +922,8 @@ function init(){
   $("runBtn").addEventListener("click",run);
   $("compareBtn").addEventListener("click",compare);
   $("researchBtn").addEventListener("click",runResearch);
+  $("autoStudyBtn").addEventListener("click",runAutoStudy);
+  restoreAutoStudy();
   $("importObservationsBtn").addEventListener("click",uploadObservedCsv);
   $("trafficSource").addEventListener("change",async()=>{
     if($("trafficSource").value==="hourly_counts" && $("engine").value!=="sumo"){

@@ -196,6 +196,15 @@
           <button type="button" id="view2DBtn" class="active" aria-pressed="true">▧ Mappa</button>
           <button type="button" id="view3DBtn" aria-pressed="false">◈ 3D</button>
         </div>
+        <div class="automatic-study-ui">
+          <button class="auto-study-run" id="autoStudyBtn" type="button">✦ Ottimizza · 500 simulazioni</button>
+          <div class="auto-study-status" id="autoStudyDetails" role="status" aria-live="polite" hidden>
+            <strong id="autoStudyTitle">Ottimizzazione automatica</strong>
+            <div class="auto-study-track"><div id="autoStudyProgress"></div></div>
+            <p id="autoStudyMessage">10 periodi × 10 tarature × 5 seed</p>
+            <a id="autoStudyDownload" href="#" hidden>↓ Report finale ZIP</a>
+          </div>
+        </div>
         <div class="map-controls" aria-label="Controlli mappa">
           <button type="button" id="fitRouteBtn" title="Mostra tutto il percorso" aria-label="Mostra intero percorso">⌖</button>
           <button type="button" id="mapZoomIn" title="Zoom avanti" aria-label="Zoom avanti">+</button>

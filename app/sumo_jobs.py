@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from app.models import SimulationRequest
 from app.research import ResearchRequest, run_study
+from app.auto_study import AutoStudyRequest, run_auto, report_zip
 from app.network import ROOT
 from app.sumo_runner import run_sumo
 from app.areas import network_path
@@ -40,6 +41,14 @@ def result(job_id):
         return job["result"]
 
 
+def latest_auto_study():
+    with _LOCK:
+        for job in reversed(list(_JOBS.values())):
+            if job["kind"]=="auto":
+                return {k:v for k,v in job.items() if k!="result"}
+    return None
+
+
 def latest_setup(area="salaria"):
     """Most recent import attempt, if any, to render readiness in the dashboard."""
     with _LOCK:
@@ -50,15 +59,21 @@ def latest_setup(area="salaria"):
 
 
 def submit(kind,request=None):
-    if kind not in {"setup","run","compare","research"}:
+    if kind not in {"setup","run","compare","research","auto"}:
         raise ValueError("Unsupported job type")
     if kind=="setup" and request not in {None,"salaria","nord_est"}:
         raise ValueError("Unknown study area")
+    if kind=="auto" and not isinstance(request,AutoStudyRequest):
+        raise ValueError("AutoStudyRequest required")
     if kind=="research" and not isinstance(request,ResearchRequest):
         raise ValueError("ResearchRequest required")
-    if kind not in {"setup","research"} and not isinstance(request,SimulationRequest):
+    if kind not in {"setup","research","auto"} and not isinstance(request,SimulationRequest):
         raise ValueError("SimulationRequest required")
     with _LOCK:
+        if kind=="auto":
+            for job in _JOBS.values():
+                if job["kind"]=="auto" and job["status"] in {"queued","running"}:
+                    return {k:v for k,v in job.items() if k!="result"}
         if kind == "setup":
             for job in _JOBS.values():
                 if (job["kind"] == "setup"
@@ -76,7 +91,7 @@ def submit(kind,request=None):
         jid=str(uuid4())
         _JOBS[jid]={"id":jid,"kind":kind,
                     "area": (request or "salaria") if kind=="setup" else
-                            request.scenario.area if kind=="research" else request.area,
+                            request.scenario.area if kind in {"research","auto"} else request.area,
                     "status":"queued",
                     "progress":0.,"message":"Waiting for SUMO worker",
                     "submitted_at":datetime.now(timezone.utc).isoformat()}
@@ -114,6 +129,25 @@ def _execute(jid,kind,request):
             data=run_sumo(request,progress=progress)
         elif kind=="research":
             data=run_study(request,progress=progress)
+        elif kind=="auto":
+            full=run_auto(request,progress=progress)
+            reports=ROOT/"data"/"reports"
+            reports.mkdir(parents=True,exist_ok=True)
+            dest=reports/("automatic-"+jid+".zip")
+            tmp=dest.with_suffix(".zip.part")
+            try:
+                tmp.write_bytes(report_zip(full))
+                tmp.replace(dest)
+            finally:
+                tmp.unlink(missing_ok=True)
+            data={
+                "simulations":full["simulations"],
+                "tomtom_success":full["tomtom_success"],
+                "quality":full["quality"],
+                "decisions":full["selection"]["decisions"],
+                "download_url":"/api/auto-study/reports/"+jid+"/download",
+                "warnings":full["warnings"],
+            }
         else:
             baseline=request.model_copy(update={"mode":"manual","overrides":{}})
             def first(p,msg):progress(p*.48,"Baseline: "+msg)

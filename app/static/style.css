@@ -253,3 +253,23 @@ input[type=range]{accent-color:var(--blue);width:100%;margin:4px 0;min-height:22
   background:#f1f5fa;color:#43556d;font-size:12px;line-height:1.5}
 .tomtom-validation-status[data-valid="true"]{background:#e8f7ef;color:#187247}
 .tomtom-validation-status[data-valid="false"]{background:#fff1e8;color:#9a4b24}
+
+/* One-click experiment action: right side of the map. */
+.automatic-study-ui{position:absolute;z-index:460;right:20px;top:248px;
+  width:min(292px,calc(100% - 40px));display:flex;flex-direction:column;gap:8px}
+.auto-study-run{background:#165bd0;color:white;border:0;border-radius:13px;
+  font-weight:800;font-size:13px;padding:14px;cursor:pointer;
+  box-shadow:0 8px 22px #1d45884a}
+.auto-study-run:hover{background:#0d4ba9}
+.auto-study-status{padding:13px;background:white;border:1px solid #dce7f3;
+  border-radius:12px;box-shadow:0 8px 22px #1d45883b;max-height:180px;overflow:auto}
+.auto-study-status strong{color:#26435e;font-size:12px}
+.auto-study-status p{color:#627690;line-height:1.5;font-size:11px;margin:8px 0}
+.auto-study-status a{color:#155fc6;font-size:11px;font-weight:800}
+.auto-study-track{margin-top:9px;height:7px;background:#e7edf7;border-radius:10px;overflow:hidden}
+.auto-study-track>div{height:100%;background:#237ce7;width:0;transition:width .25s}
+@media(max-width:810px){
+  .automatic-study-ui{top:184px;right:10px;width:min(188px,51vw)}
+  .auto-study-run{font-size:11px;padding:10px 8px}
+  .auto-study-status{padding:9px;max-height:135px}
+}
