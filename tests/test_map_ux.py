@@ -103,3 +103,13 @@ def test_regional_preparation_has_visible_action_and_separate_status():
     assert 'id="routeEndLabel"' in html
     assert 'regionPrepareBtn' in js
     assert 'showRegionalStudyExtent' in js
+
+
+
+def test_tomtom_auth_diagnostic_is_available_in_key_dialog():
+    html=(STATIC/"index.html").read_text()
+    script=(STATIC/"main.js").read_text()
+    assert 'id="tomtomTestBtn"' in html
+    assert 'id="tomtomValidationStatus"' in html
+    assert '"/api/traffic/check-key"' in script
+    assert "body:JSON.stringify({api_key:key})" in script

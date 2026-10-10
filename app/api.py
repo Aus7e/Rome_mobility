@@ -156,6 +156,20 @@ class TomTomOnScreen(BaseModel):
     api_key: SecretStr | None = None
 
 
+class TomTomKeyCheck(BaseModel):
+    api_key: SecretStr
+
+
+@app.post("/api/traffic/check-key")
+def tomtom_check_key(request: TomTomKeyCheck):
+    """Verify Routing authorization. Credentials stay in this request only."""
+    from app.traffic_reference import check_routing_key
+    try:
+        return check_routing_key(request.api_key.get_secret_value())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+
+
 @app.post("/api/traffic/typical")
 def typical_traffic_key_on_screen(request: TomTomOnScreen):
     """Key is provided per request in JSON body and never saved by backend."""

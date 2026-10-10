@@ -251,11 +251,13 @@
     <p>Inserisci la tua chiave <strong>TomTom Routing API</strong>. È usata per richiedere una stima tipica di percorrenza della Salaria: non equivale a misurazioni live o conteggi di veicoli.</p>
     <label for="tomtomApiKey">Chiave API</label>
     <input id="tomtomApiKey" type="password" autocomplete="off" spellcheck="false" maxlength="180" placeholder="Incolla la chiave TomTom" required>
-    <p class="dialog-privacy">La chiave resta soltanto nella memoria di questa scheda, non nel codice né sul disco. Viene inviata all'app locale quando richiedi la stima. Evita di usarla su server condivisi o pubblici.</p>
+    <p class="dialog-privacy">La chiave resta soltanto nella memoria di questa scheda, non nel codice né sul disco. Viene inviata all'app locale quando richiedi una verifica o una stima. La verifica invia una richiesta di routing a TomTom e può consumare quota API. Non utilizzare su server pubblici.</p>
+    <div class="tomtom-validation-status" id="tomtomValidationStatus" role="status" aria-live="polite">Puoi verificare la chiave prima di utilizzarla.</div>
     <a href="https://developer.tomtom.com/" target="_blank" rel="noopener noreferrer">Come ottenere una chiave TomTom ↗</a>
     <div class="dialog-actions">
       <button type="button" id="tomtomForgetBtn" class="dialog-ghost">Dimentica chiave</button>
       <button type="button" id="tomtomCancelBtn" class="dialog-ghost">Annulla</button>
+      <button type="button" id="tomtomTestBtn" class="dialog-ghost">Verifica chiave</button>
       <button type="submit" class="dialog-submit">Usa la chiave</button>
     </div>
   </form>
