@@ -333,3 +333,62 @@ License: code MIT (see LICENSE). OSM data remain under ODbL.
 ## Select a section
 
 The client supports the full Prati Fiscali–GRA candidate axis, the first 45% or the remaining 55%, using *distance fractions*, not confirmed neighbourhood boundaries. The model and list of semaphores update when the selection changes.
+
+## Single-click 500-run automated signal optimization
+
+A prominent **Ottimizza · 500 simulazioni** control appears on the right of
+the street map. Requires a ready SUMO network for the selected study area,
+a ready Salaria network for provider references, and your TomTom Routing key.
+Click once, supply the key in the on-screen dialog if needed, then the app
+schedules **500 distinct SUMO microsimulations**:
+
+- 10 periods: weekday 07/08/12/17/19 and weekend 09/12/15/18/21.
+- 10 signal policies: all-zero-offset baseline (90s/45s) plus manual,
+  outbound-wave and inbound-wave variants with cycles/green durations
+  75/35, 90/50 and 105/60 seconds.
+- Five identical seeds per period/policy, of which the first three select the
+  best simulated policy and the final two are held out for a fairer check.
+- Two concurrent SUMO workers by default, capped by available cores and
+  ROME_RESEARCH_MAX_WORKERS. All 500 are real SUMO runs, not UI animations.
+
+The experimental score is:
+mean completed-trip delay (seconds) + 0.08 × peak stopped vehicles
++ 4 × mean stops + 250 × (1 − trip completion fraction).
+Runs with under 85% completion or no controlled light are not eligible.
+A candidate must improve on the *unused validation seeds* relative to the
+same hypothetical zero-offset baseline; otherwise the baseline is kept.
+This is exploratory optimization, not a statistically certified or safe
+municipal controller setting.
+
+**TomTom makes up to 20 opt-in route-ETA calls** (two directions × ten periods),
+*not 500* calls. These predictions are shown in separate evidence columns
+and do NOT magically turn into car counts, regional OD distributions or
+safety constraints. There may be provider usage charges. An unavailable key
+or zero provider references stops the study before consuming SUMO resources.
+
+At successful completion the browser automatically downloads a ZIP containing:
+
+- printable offline HTML report (use browser Print → Save as PDF),
+- Markdown research summary,
+- runs.csv (all 500 outcomes, scores and coverage),
+- policy_rankings.csv (3 training + 2 held-out seed summaries),
+- recommended_schedule.csv (period-specific hypothetical best controls),
+- tomtom_reference.csv (externally predicted Salaria routing times),
+- study.json (method, network/source fingerprints, all results and caveats).
+
+Only a **sanitized** ZIP is persisted in the local Docker volume under
+data/reports. Browser API key stays in memory only and is not included in
+jobs metadata, CSV/JSON, ZIP or URL. A latest-report link remains available
+after reloading the page.
+
+**Scientific limitations:** TomTom Routing predictions are not historical
+volume measurements and refer only to Salaria, even in the larger Roma Nord-Est
+study. SUMO's OSM signal plans and synthetic origin/destination rates are not
+verified Rome plans. The approach controls only junctions where an identifiable
+Salaria approach exists. Completion, side streets, crossings, emergency-service
+access and field-safety requirements must be validated before anyone proposes
+deployment. The score can guide future experiments but cannot certify that a
+city traffic pattern will improve in reality.
+
+Related TomTom docs:
+https://docs.tomtom.com/routing-api/documentation/tomtom-maps/v1/calculate-route
