@@ -21,6 +21,8 @@ class SimulationRequest(BaseModel):
     cycle_s: int = Field(default=90, ge=40, le=240)
     green_s: int = Field(default=45, ge=10, le=180)
     duration_min: int = Field(default=12, ge=3, le=40)
+    drain_max_s: int = Field(default=900, ge=0, le=3600,
+        description="Additional SUMO steps after arrivals stop being injected; 0 disables drain")
     side_traffic_share: float = Field(default=0.25, ge=0, le=1, description="Experimental relative side-street demand")
     seed: int = Field(default=42, ge=0, le=1_000_000)
     segment: Literal["full", "south", "north"] = "full"

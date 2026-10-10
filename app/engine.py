@@ -7,20 +7,24 @@ import statistics
 from app.models import SimulationRequest
 
 
+# Explicitly SYNTHETIC per-hour demand profiles. Values are research assumptions,
+# NOT estimated from TomTom Routing or field counts.
+WEEKDAY_HOURLY_FACTORS = (
+    .25,.21,.18,.17,.18,.30,.69,1.45,1.82,1.47,1.12,1.02,
+    1.09,1.17,1.10,1.08,1.26,1.57,1.69,1.28,.94,.71,.49,.32,
+)
+WEEKEND_HOURLY_FACTORS = (
+    .34,.28,.23,.20,.19,.24,.37,.48,.59,.72,.82,.94,
+    1.03,1.09,1.12,1.05,1.03,.99,.91,.86,.80,.68,.55,.42,
+)
+
+
 def demand_factor(day, hour):
-    """Explicitly hypothetical shape; not inferred from real Rome traffic counts."""
-    weekend = day.weekday() >= 5
-    if weekend:
-        return 0.46 if hour < 6 else 0.78 if 11 <= hour <= 20 else 0.60
-    if hour < 6:
-        return 0.30
-    if 7 <= hour <= 9:
-        return 1.65
-    if 17 <= hour <= 19:
-        return 1.50
-    if hour in (6, 10, 16, 20):
-        return 1.08
-    return 0.88
+    """24 distinct hourly synthetic multipliers (NOT observed traffic data)."""
+    if not 0 <= hour <= 23:
+        raise ValueError("Hour must be from 0 to 23")
+    return (WEEKEND_HOURLY_FACTORS if day.weekday() >= 5
+            else WEEKDAY_HOURLY_FACTORS)[hour]
 
 
 def timing_for(signal, request, length_m):
