@@ -508,10 +508,32 @@ function finishTomTomDialog(key){
 function setupTomTomKeyUI(){
   const open=()=>{
     $("tomtomApiKey").value=tomtomKey;
+    $("tomtomValidationStatus").textContent="Puoi verificare la chiave prima di utilizzarla.";
+    $("tomtomValidationStatus").dataset.valid="";
     $("tomtomDialog").showModal();
   };
   $("tomtomHeaderBtn").addEventListener("click",open);
   $("tomtomConnectBtn").addEventListener("click",open);
+  $("tomtomTestBtn").addEventListener("click",async()=>{
+    const button=$("tomtomTestBtn");
+    const key=$("tomtomApiKey").value.trim();
+    if(!key || key.length>180 || /\s/.test(key)){
+      $("tomtomValidationStatus").textContent="Inserisci prima una chiave senza spazi.";
+      return;
+    }
+    button.disabled=true;
+    $("tomtomValidationStatus").textContent="Verifica permessi Routing API in corso…";
+    try{
+      const info=await api("/api/traffic/check-key",{
+        method:"POST",body:JSON.stringify({api_key:key})
+      });
+      $("tomtomValidationStatus").textContent=info.message;
+      $("tomtomValidationStatus").dataset.valid=String(info.authorized);
+    }catch(error){
+      $("tomtomValidationStatus").textContent="Impossibile verificare: "+error.message;
+      $("tomtomValidationStatus").dataset.valid="false";
+    }finally{button.disabled=false;}
+  });
   $("tomtomForm").addEventListener("submit",event=>{
     event.preventDefault();
     const key=$("tomtomApiKey").value.trim();
@@ -526,7 +548,11 @@ function setupTomTomKeyUI(){
     $("tomtomConnectionState").textContent="Chiave attiva in questa scheda (non salvata).";
     finishTomTomDialog(tomtomKey);
   });
-  $("tomtomApiKey").addEventListener("input",()=> $("tomtomApiKey").setCustomValidity(""));
+  $("tomtomApiKey").addEventListener("input",()=>{
+    $("tomtomApiKey").setCustomValidity("");
+    $("tomtomValidationStatus").textContent="Chiave modificata: premi «Verifica chiave» per controllarla.";
+    $("tomtomValidationStatus").dataset.valid="";
+  });
   $("tomtomCancelBtn").addEventListener("click",()=>finishTomTomDialog(null));
   $("tomtomForgetBtn").addEventListener("click",()=>{
     tomtomKey="";$("tomtomApiKey").value="";

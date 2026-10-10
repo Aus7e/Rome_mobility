@@ -248,3 +248,8 @@ input[type=range]{accent-color:var(--blue);width:100%;margin:4px 0;min-height:22
 .region-prepare{background:#0f69e5;color:#fff;border-color:#0f69e5;
   padding:13px 12px;margin:12px 0}
 .route-card .region-prepare[hidden]{display:none}
+
+.tomtom-validation-status{margin:12px 0 5px;padding:10px;border-radius:9px;
+  background:#f1f5fa;color:#43556d;font-size:12px;line-height:1.5}
+.tomtom-validation-status[data-valid="true"]{background:#e8f7ef;color:#187247}
+.tomtom-validation-status[data-valid="false"]{background:#fff1e8;color:#9a4b24}

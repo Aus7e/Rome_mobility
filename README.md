@@ -72,6 +72,15 @@ This should only be used on the localhost deployment, not publicly exposed
 on an untrusted/shared site. The legacy `.env` server-side option remains
 available for developers.
 
+If TomTom responds HTTP 401, open **TomTom API** and click **Verifica chiave**
+to make a single explicit authorization check, independent from SUMO.
+A 401 generally means TomTom does not recognize/authorize the key;
+403 suggests product/domain permission restrictions and 429 indicates
+rate limit or quota. In your [MyTomTom dashboard](https://my.tomtom.com/)
+confirm the API key is active and **Routing API** is enabled for it.
+Do not share your API key in issue reports or chat. The diagnostic sends
+one API request and may count toward your usage allowance.
+
 The TomTom Routing estimate applies to the **Salaria route**, even when the
 regional study view is selected; it is NOT a live traffic heatmap for all
 Rome and cannot provide hourly vehicle counts.

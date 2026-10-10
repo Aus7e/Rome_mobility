@@ -149,3 +149,52 @@ def test_screen_key_post_is_accepted_with_local_sumo(monkeypatch):
     assert response.status_code==200
     assert received == ["PER_REQUEST_TEST_ONLY"]
     assert "PER_REQUEST_TEST_ONLY" not in response.text
+
+
+
+def test_routing_auth_check_is_diagnostic_and_does_not_echo_key():
+    from app.traffic_reference import check_routing_key
+    cases = {
+        200: True,
+        401: False,
+        403: False,
+        429: False,
+        500: False,
+    }
+    for status, authorized in cases.items():
+        seen=[]
+        def handler(request):
+            seen.append(request)
+            assert request.url.params["key"] == "A_PRIVATE_TEST_KEY"
+            assert "/routing/1/calculateRoute/" in str(request.url)
+            return httpx.Response(status, text="A_PRIVATE_TEST_KEY should not be surfaced")
+        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+            result=check_routing_key("A_PRIVATE_TEST_KEY", client=client)
+        assert len(seen)==1
+        assert result["authorized"] is authorized
+        assert result["http_status"] == status
+        assert "A_PRIVATE_TEST_KEY" not in str(result)
+
+
+def test_routing_auth_check_endpoint_uses_key_per_request(monkeypatch):
+    import app.traffic_reference as module
+    captured=[]
+    def check(key):
+        captured.append(key)
+        return {"authorized":False,"http_status":401,"message":"Non autorizzata"}
+    monkeypatch.setattr(module,"check_routing_key",check)
+    response=TestClient(app).post("/api/traffic/check-key", json={"api_key":"A_SECRET_FOR_TEST"})
+    assert response.status_code==200
+    assert captured==["A_SECRET_FOR_TEST"]
+    assert "A_SECRET_FOR_TEST" not in response.text
+
+
+def test_route_401_is_human_actionable_and_does_not_leak_key(monkeypatch):
+    monkeypatch.setenv("TOMTOM_API_KEY","A_SECRET_FOR_TEST")
+    with httpx.Client(transport=httpx.MockTransport(
+        lambda req:httpx.Response(401,text="A_SECRET_FOR_TEST should not echo")
+    )) as client:
+        with pytest.raises(RuntimeError,match="TomTom HTTP 401") as error:
+            get_typical_traffic(date(2026,10,14),8,"outbound",
+                                network=OSM_INFO,client=client)
+    assert "A_SECRET_FOR_TEST" not in str(error.value)
