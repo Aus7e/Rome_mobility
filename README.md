@@ -392,3 +392,32 @@ city traffic pattern will improve in reality.
 
 Related TomTom docs:
 https://docs.tomtom.com/routing-api/documentation/tomtom-maps/v1/calculate-route
+
+## Simulation validity update after first 500-run audit
+
+The first 500-run analysis had low journey completion (mean 24.8%) and
+no eligible timing plans. This does NOT prove the baseline plan is best.
+
+- Duration_min now means **vehicle injection window**; a separate
+  drain_max_s (default 900 seconds, adjustable in the UI) continues SUMO
+  after injection ends. The simulation finishes when the road empties or
+  the drain cap is reached. Unfinished trips are censored.
+- Teleporting long-waiting vehicles is disabled, avoiding invented
+  success in gridlocked traffic.
+- Reports retain injection end, SUMO actual end, completed/unfinished
+  counts, drain timeout counts, and actual cycle/green retimings separately
+  from offset-only changes.
+- Synthetic weekday and weekend traffic have separate values at every
+  hour, with distinct 07:00/08:00 and 17:00/19:00 levels.
+- Signal controllers whose imported phase programs cannot safely fit
+  a requested green/cycle retain those programs. A wave may change
+  ONLY the original program's starting offset, clearly classified as
+  offset_only, without fabricating reduced red/yellow clearance.
+- TomTom route lengths varying by 1.75x or more between directions are
+  marked not suitable for SUMO calibration, while retaining the original
+  provider predictions and data-provenance warnings.
+
+**Rerun the 500-simulation experiment:** the previous ZIP uses the old
+simulation horizon and must not be compared as if the new model were
+the same. Measured counts, actual municipal signal phases and held-out
+field travel times are still required for a validated real-world claim.

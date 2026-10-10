@@ -76,6 +76,14 @@ def test_real_sumo_traffic_pipeline(tmp_path):
     assert output["frames"]
     assert any(frame["cars"] for frame in output["frames"])
     assert "warnings" in output
+    assert output["metrics"]["injection_end_s"] == 180
+    assert output["metrics"]["simulation_end_s"] >= 180
+    assert output["metrics"]["simulation_end_s"] <= 180 + request.drain_max_s
+    assert output["metrics"]["drain_used_s"] == output["metrics"]["simulation_end_s"] - 180
+    assert output["metrics"]["completed"] <= output["metrics"]["inserted"]
+    assert "timing_adjusted_lights" in output["metrics"]
+    assert "offset_only_lights" in output["metrics"]
+    assert all("tuning_kind" in s for s in output["signals"])
 
     # Two distinct SUMO child processes with independent TraCI connections,
     # each running the matched baseline/experiment pair. The input OSM net

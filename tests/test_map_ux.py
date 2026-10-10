@@ -113,3 +113,11 @@ def test_tomtom_auth_diagnostic_is_available_in_key_dialog():
     assert 'id="tomtomValidationStatus"' in html
     assert '"/api/traffic/check-key"' in script
     assert "body:JSON.stringify({api_key:key})" in script
+
+
+def test_advanced_ui_tracks_distinct_drain_duration():
+    html=(STATIC/"index.html").read_text()
+    script=(STATIC/"main.js").read_text()
+    assert 'id="drainMax"' in html
+    assert 'drain_max_s:+$("drainMax").value*60' in script
+    assert "SMALTIMENTO NON COMPLETO" in script

@@ -113,9 +113,11 @@
                 <button class="text-button" type="button" id="weatherBtn">Carica pioggia storica ↗</button>
               </div>
               <div class="mini-fields">
-                <div class="field"><label for="duration">Durata (min)</label><input id="duration" type="number" min="3" max="40" value="12"></div>
+                <div class="field"><label for="duration">Ingresso veicoli (min)</label><input id="duration" type="number" min="3" max="40" value="12"></div>
                 <div class="field"><label for="seed">Seed</label><input id="seed" type="number" min="0" max="1000000" value="42"></div>
+                <div class="field"><label for="drainMax">Smaltimento max (min)</label><input id="drainMax" type="number" min="0" max="60" value="15"></div>
               </div>
+              <p class="hint">I veicoli vengono immessi solo per la durata scelta. SUMO continua a simularli durante lo smaltimento, senza aggiungerne altri. Limite 15 minuti, modificabile.</p>
             </div>
           </details>
 

@@ -22,7 +22,9 @@ function syncLabels(){
   $("sideTrafficValue").textContent=$("sideTraffic").value+"%";
   const day=new Date($("day").value+"T12:00:00");
   const weekend=day.getDay()===0||day.getDay()===6, h=+$("hour").value;
-  const factor=weekend?(h<6?.46:(h>=11&&h<=20?.78:.60)):(h<6?.30:((h>=7&&h<=9)?1.65:(h>=17&&h<=19)?1.5:([6,10,16,20].includes(h)?1.08:.88)));
+  const weekdayFactors=[.25,.21,.18,.17,.18,.30,.69,1.45,1.82,1.47,1.12,1.02,1.09,1.17,1.10,1.08,1.26,1.57,1.69,1.28,.94,.71,.49,.32];
+  const weekendFactors=[.34,.28,.23,.20,.19,.24,.37,.48,.59,.72,.82,.94,1.03,1.09,1.12,1.05,1.03,.99,.91,.86,.80,.68,.55,.42];
+  const factor=(weekend?weekendFactors:weekdayFactors)[h];
   $("estimatedDemand").textContent=$("trafficSource").value==="hourly_counts"
     ?"Domanda oraria esterna: controllare copertura per giorno e ora (senza moltiplicatori sintetici)"
     :"Domanda modellata: "+Math.round($("demand").value*factor)+" veicoli/h per direzione · fattore "+factor.toFixed(2)+" (ipotetico)";
@@ -37,6 +39,7 @@ function params(){
     rain_mm_h:+$("rain").value,speed_kmh:+$("speed").value,
     demand_vph:+$("demand").value, cycle_s:+$("cycle").value,
     green_s:+$("green").value, duration_min:+$("duration").value,
+    drain_max_s:+$("drainMax").value*60,
     seed:+$("seed").value,mode:$("mode").value,segment:$("segment").value,
     side_traffic_share:+$("sideTraffic").value/100,overrides:state.overrides
   };
@@ -373,7 +376,11 @@ function metricsUI(m){
   $("delayKpi").textContent=formatSeconds(m.avg_delay_s);
   $("queueKpi").textContent=String(m.max_queued_vehicles);
   $("stopsKpi").textContent=m.mean_stops_per_trip==null?"—":String(m.mean_stops_per_trip);
-  $("completionLabel").textContent=m.completed+"/"+m.inserted+" veicoli completati · "+m.effective_speed_kmh+" km/h";
+  const rate=m.inserted?Math.round(m.completed/m.inserted*100):0;
+  $("completionLabel").textContent=m.completed+"/"+m.inserted+" veicoli completati ("+rate+
+    "%) · inserimento "+(m.injection_end_s??"—")+" s, fine SUMO "+
+    (m.simulation_end_s??"—")+" s · "+(m.controlled_lights??0)+" semafori controllati"+ 
+    (m.drain_timed_out?" · SMALTIMENTO NON COMPLETO":"");
 }
 function queueChart(){
   const canvas=$("queueChart"),ctx=canvas.getContext("2d");

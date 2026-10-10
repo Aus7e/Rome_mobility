@@ -53,6 +53,13 @@ def values_of(metrics):
         "still_on_road": int(metrics.get("still_on_road") or 0),
         "upstream_waiting": int(metrics.get("upstream_waiting") or 0),
         "controlled_lights": int(metrics.get("controlled_lights") or 0),
+        "timing_adjusted_lights": int(metrics.get("timing_adjusted_lights") or 0),
+        "offset_only_lights": int(metrics.get("offset_only_lights") or 0),
+        "uncontrolled_lights": int(metrics.get("uncontrolled_lights") or 0),
+        "injection_end_s": metrics.get("injection_end_s"),
+        "simulation_end_s": metrics.get("simulation_end_s"),
+        "drain_used_s": metrics.get("drain_used_s"),
+        "drain_timed_out": bool(metrics.get("drain_timed_out") or False),
     })
     return result
 

@@ -19,6 +19,7 @@ import statistics
 import threading
 
 from app.engine import demand_factor
+from app.simulation_quality import drain_deadline
 from app.areas import network_path, area_from_network
 from app.models import SimulationRequest
 from app.network import ROOT, closest_fraction, current_network, extract_osm, lengths, meters, subset_network
@@ -210,6 +211,35 @@ def _offset_phase(durations, offset_s):
     return 0,durations[0]
 
 
+def _is_salaria_approach(net, edge, axis):
+    """Prefer a named Salaria edge; geometric alignment is qualified fallback."""
+    if "salaria" in (edge.getName() or "").lower():
+        return True
+    shape=edge.getShape()
+    if len(shape)<2 or edge.getLength()<8:
+        return False
+    # Cross roads may end right on the axis; require *both* endpoints near
+    # the corridor AND sufficient displacement parallel to the axis.
+    try:
+        a=net.convertXY2LonLat(*shape[0])
+        b=net.convertXY2LonLat(*shape[-1])
+        near_a,sa=closest_fraction([a[1],a[0]],axis)
+        near_b,sb=closest_fraction([b[1],b[0]],axis)
+    except (TypeError,ValueError,IndexError):
+        return False
+    return max(near_a,near_b)<=25 and abs(sb-sa)>=.65*edge.getLength()
+
+
+def _signal_offset(request, sig, length_m, actual_cycle):
+    speed=request.speed_kmh/3.6
+    override=request.overrides.get(sig["id"])
+    if request.mode=="wave_outbound":
+        return round(-sig["s_m"]/speed)%round(actual_cycle)
+    if request.mode=="wave_inbound":
+        return round(-(length_m-sig["s_m"])/speed)%round(actual_cycle)
+    return (override.offset_s%round(actual_cycle)) if override else 0
+
+
 def _configure_lights(conn, net, request, info, warn):
     traci,_=_imports()
     configured=[]
@@ -226,42 +256,58 @@ def _configure_lights(conn, net, request, info, warn):
         main_idx=set()
         for idx,linkset in enumerate(links):
             for link in linkset or ():
-                if not link:
-                    continue
+                if not link:continue
                 try:
-                    inedge=conn.lane.getEdgeID(link[0])
-                    if "salaria" in (net.getEdge(inedge).getName() or "").lower():
+                    incoming=conn.lane.getEdgeID(link[0])
+                    if _is_salaria_approach(net,net.getEdge(incoming),info["points"]):
                         main_idx.add(idx)
-                except (KeyError, ValueError):
+                except (KeyError,ValueError):
                     continue
         if not main_idx:
-            warn.append("No identifiable Salaria approach: "+tid);continue
-        score=[sum(1 for i in main_idx if i<len(p.state) and p.state[i] in "gG") for p in logic.phases]
+            warn.append("No identifiable aligned Salaria approach: "+tid);continue
+        score=[sum(1 for i in main_idx if i<len(p.state) and p.state[i] in "gG")
+               for p in logic.phases]
         primary=max(range(len(score)),key=lambda k:score[k])
         if score[primary]==0:
             warn.append("No green phase for Salaria approach: "+tid);continue
         override=request.overrides.get(tid)
         green=override.green_s if override and override.green_s else request.green_s
         durations=rescale_phases(logic.phases,primary,green,request.cycle_s)
+        tuning_kind="cycle_green_offset"
         if durations is None:
-            warn.append("Requested timings infeasible; kept original at "+tid);continue
-        phases=[traci.trafficlight.Phase(duration=d,state=p.state,
-                                        minDur=d,maxDur=d) for d,p in zip(durations,logic.phases)]
-        program=traci.trafficlight.Logic("rome_lab",0,0,phases)
-        conn.trafficlight.setProgramLogic(tid,program)
-        if request.mode=="wave_outbound":
-            off=round(-sig["s_m"]/(request.speed_kmh/3.6))%request.cycle_s
-        elif request.mode=="wave_inbound":
-            off=round(-(info["length_m"]-sig["s_m"])/(request.speed_kmh/3.6))%request.cycle_s
+            # Safe fallback: alter *only* the starting phase of the intact
+            # imported controller. Never fabricate illegal green splits or
+            # shorten clearance phases to force a requested cycle.
+            durations=[float(p.duration) for p in logic.phases]
+            tuning_kind="offset_only"
+            if request.mode=="manual" and not (override and override.offset_s):
+                warn.append("Requested timings infeasible; original schedule preserved at "+tid)
+                continue
+            if sum(durations)<=0:
+                warn.append("Invalid imported phase durations: "+tid);continue
+            warn.append("Cycle/green infeasible; adjusting offset ONLY at "+tid)
         else:
-            off=override.offset_s % request.cycle_s if override else 0
-        index,left=_offset_phase(durations,off)
+            # Preserve yellow, red, permitted movements and existing
+            # phase ordering. Only feasible green durations are modified.
+            phases=[traci.trafficlight.Phase(duration=d,state=p.state,
+                                            minDur=d,maxDur=d) for d,p in zip(durations,logic.phases)]
+            program=traci.trafficlight.Logic("rome_lab",0,0,phases)
+            conn.trafficlight.setProgramLogic(tid,program)
+        actual_cycle=sum(durations)
+        offset=_signal_offset(request,sig,info["length_m"],actual_cycle)
+        index,left=_offset_phase(durations,offset)
         conn.trafficlight.setPhase(tid,index)
         conn.trafficlight.setPhaseDuration(tid,left)
-        configured.append({"id":tid,"s_m":sig["s_m"],"green_s":green,
-                           "cycle_s":request.cycle_s,"offset_s":off,
-                           "phase_count":len(phases),"label":sig["label"]})
+        configured.append({
+            "id":tid,"s_m":sig["s_m"],
+            "green_s":green if tuning_kind=="cycle_green_offset" else None,
+            "requested_cycle_s":request.cycle_s,
+            "cycle_s":round(actual_cycle,2),"offset_s":offset,
+            "phase_count":len(durations),"label":sig["label"],
+            "tuning_kind":tuning_kind,
+        })
     return configured
+
 
 
 def _route_catalog(conn, net, edgeinfo, length_m, seed, warnings, regional=False):
@@ -358,7 +404,9 @@ def _run(request: SimulationRequest, *, net_path=NET_FILE, frames=True, progress
     command=[shutil.which("sumo") or "sumo", "-n",str(net_path),
              "--step-length","1","--seed",str(request.seed),
              "--no-step-log","true","--duration-log.disable","true",
-             "--time-to-teleport","120","--collision.action","warn"]
+             # Teleportation makes a jam look like successfully completed journeys.
+             # Disable it and use explicit end-of-run censoring instead.
+             "--time-to-teleport","-1","--collision.action","warn"]
     conn=None
     warnings=[]
     try:
@@ -415,28 +463,33 @@ def _run(request: SimulationRequest, *, net_path=NET_FILE, frames=True, progress
             warnings.append("Regional OD flows are synthetic, distributed across extra north/south/east/west routes.")
         budgets={k:0. for k in rates}
         seconds=request.duration_min*60
-        for tick in range(seconds+1):
-            for group,rate in rates.items():
-                budgets[group]+=rate
-                while budgets[group]>=1:
-                    budgets[group]-=1
-                    available=routes[group]
-                    if not available:continue
-                    rid=rng.choice(available)
-                    vid="vehicle_"+str(vehicle_id)
-                    vehicle_id+=1
-                    try:
-                        conn.vehicle.add(vid,rid,typeID="lab_passenger",depart="now",
-                                         departLane="best",departSpeed="max")
-                        born[vid]=tick
-                        # Every OD route has its own free-flow benchmark.
-                        route_edges=conn.route.getEdges(rid)
-                        route_length=sum(net.getEdge(e).getLength() for e in route_edges
-                                         if net.hasEdge(e))
-                        trip_freeflow[vid]=route_length/maxspeed
-                        depart_total+=1
-                    except traci.exceptions.TraCIException:
-                        waiting_queue+=1
+        max_sim_second=drain_deadline(seconds,request.drain_max_s)
+        actual_end_s=0
+        # Inject for precisely 'seconds' steps, then drain the existing traffic.
+        for tick in range(max_sim_second):
+            actual_end_s=tick+1
+            if tick < seconds:
+                for group,rate in rates.items():
+                    budgets[group]+=rate
+                    while budgets[group]>=1:
+                        budgets[group]-=1
+                        available=routes[group]
+                        if not available:continue
+                        rid=rng.choice(available)
+                        vid="vehicle_"+str(vehicle_id)
+                        vehicle_id+=1
+                        try:
+                            conn.vehicle.add(vid,rid,typeID="lab_passenger",depart="now",
+                                             departLane="best",departSpeed="max")
+                            born[vid]=tick
+                            # Every OD route has its own free-flow benchmark.
+                            route_edges=conn.route.getEdges(rid)
+                            route_length=sum(net.getEdge(e).getLength() for e in route_edges
+                                             if net.hasEdge(e))
+                            trip_freeflow[vid]=route_length/maxspeed
+                            depart_total+=1
+                        except traci.exceptions.TraCIException:
+                            waiting_queue+=1
             conn.simulationStep()
             current=set(conn.vehicle.getIDList())
             stopped=set()
@@ -468,11 +521,20 @@ def _run(request: SimulationRequest, *, net_path=NET_FILE, frames=True, progress
             if frames and tick%2==0:
                 captured.append({"t":tick,"cars":rows,"signals":_states(conn,info["signals"])})
             if progress and tick%20==0:
-                progress(min(.99,tick/max(1,seconds)),f"SUMO {tick}/{seconds} s · {depart_total} departures")
+                progress(min(.99,(tick+1)/max_sim_second),
+                         f"SUMO {tick+1}/{max_sim_second} s · {depart_total} injected"
+                         + (" · clearing remaining trips" if tick>=seconds else ""))
+            if tick+1 >= seconds and not current and conn.simulation.getMinExpectedNumber()==0:
+                break
+        # Simulation completion is only measured after the drain phase.
         mean=statistics.mean(arrivals) if arrivals else None
         freeflow=statistics.mean([a-d for a,d in zip(arrivals,actual_delays)]) if arrivals else info["length_m"]/maxspeed
         metrics={
             "inserted":depart_total, "completed":len(arrivals),
+            "injection_end_s":seconds,"simulation_end_s":actual_end_s,
+            "drain_max_s":request.drain_max_s,
+            "drain_used_s":max(0,actual_end_s-seconds),
+            "drain_timed_out":bool(born and actual_end_s>=max_sim_second),
             "still_on_road":len(born),"upstream_waiting":waiting_queue,
             "avg_travel_s":round(mean,1) if mean is not None else None,
             "p95_travel_s":sorted(arrivals)[math.ceil(.95*len(arrivals))-1] if arrivals else None,
@@ -482,6 +544,9 @@ def _run(request: SimulationRequest, *, net_path=NET_FILE, frames=True, progress
             "stopped_vehicle_seconds":stopped_veh_s,"max_queued_vehicles":max_queue,
             "demand_factor":round(factor,2),"effective_speed_kmh":round(maxspeed*3.6,1),
             "controlled_lights":len(adjusted),"signals_total":len(info["signals"]),
+            "timing_adjusted_lights":sum(x["tuning_kind"]=="cycle_green_offset" for x in adjusted),
+            "offset_only_lights":sum(x["tuning_kind"]=="offset_only" for x in adjusted),
+            "uncontrolled_lights":len(info["signals"])-len(adjusted),
             "traffic_source":"imported_hourly_directional" if observed else "synthetic_hourly_factor",
             "demand_evidence":observed,
             "area":request.area,
@@ -498,6 +563,9 @@ def _run(request: SimulationRequest, *, net_path=NET_FILE, frames=True, progress
                 "Traffic light programs are generated by netconvert, not measured control-room timing.",
                 "Rain parameter changes driving behaviour by assumed speed, deceleration and gap rules.",
                 "Turn movements and side-road conflicts are simulated only within the imported OSM/SUMO network.",
+                "Vehicle injection stops at injection_end_s; simulation continues until trips end or the drain cap is reached.",
+                "Unfinished journeys are right-censored at simulation_end_s and must not be treated as completed.",
+                "No teleportation is allowed to artificially improve completion rates.",
                 "Trip KPI includes completed side-road trips; delays use each route's own length divided by assumed free-flow speed."
             ],
             "route_groups":{k:len(v) for k,v in routes.items()}

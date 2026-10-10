@@ -90,6 +90,9 @@ def model_score(m):
         return None
     if m["completion_rate"]<.85 or not m.get("controlled_lights"):
         return None
+    # No false policy win when a simulation terminated with unresolved cars.
+    if m.get("drain_timed_out") and m["completion_rate"] < .98:
+        return None
     return round(m["avg_delay_s"]+.08*m["max_queued_vehicles"]
                  +4*m["mean_stops_per_trip"]+250*(1-m["completion_rate"]),4)
 
@@ -166,6 +169,22 @@ def _fetch_tomtom(design, progress=None, provider=get_typical_traffic):
             except (RuntimeError,ValueError) as exc:
                 # The TomTom helper suppresses credential-bearing raw response bodies.
                 notes.append(f"TomTom {period['id']} {direction}: {str(exc)[:175]}")
+    # A severe two-way route-length asymmetry means the provider probably
+    # snapped a waypoint to a different one-way road or detoured.
+    # Preserve the raw predictions but mark them unsuitable for calibration.
+    for period in study_periods(design.scenario):
+        matched=[x for x in references if x["period"]==period["id"]
+                 and isinstance(x.get("length_m"),(int,float)) and x["length_m"]>0]
+        if len(matched)==2:
+            ratio=max(x["length_m"] for x in matched)/min(x["length_m"] for x in matched)
+            if ratio>=1.75:
+                for x in matched:
+                    x["route_geometry_check"]="UNRELIABLE_DIRECTION_LENGTH_ASYMMETRY"
+                notes.append(f"TomTom {period['id']}: opposite-direction route lengths differ "
+                             f"by {ratio:.2f}x; these ETAs are not suitable for SUMO calibration.")
+            else:
+                for x in matched:
+                    x["route_geometry_check"]="DIRECTION_LENGTHS_SIMILAR_NOT_GEO_VERIFIED"
     if not references:
         raise RuntimeError("TomTom produced no usable hourly reference. "
                            "Check Routing API permissions before the 500 SUMO runs. "+
@@ -218,7 +237,13 @@ def run_auto(design, *, runner=_run_one, tomtom=None, net_path=None, progress=No
         row["score"]=model_score(row["metrics"])
     selection=select_winners(rows,design.scenario)
     failures=sum(row["score"] is None for row in rows)
+    cycle_tuned=sum(row["metrics"].get("timing_adjusted_lights",0) for row in rows)
+    offset_only=sum(row["metrics"].get("offset_only_lights",0) for row in rows)
+    drain_timeout=sum(bool(row["metrics"].get("drain_timed_out")) for row in rows)
     notes += [
+        f"{drain_timeout}/500 runs reached the clearance time limit with cars in flight.",
+        f"Effective controls across trials: {cycle_tuned} cycle/green adjustments, "
+        f"{offset_only} preserved-plan offset-only adjustments.",
         f"{failures}/500 simulation runs had incomplete trips or no valid signal control.",
         "Best configurations are hypothetical, not real Rome municipal light timings.",
         "Only controllers with identifiable Salaria approaches are retimed; other roads may be affected.",
@@ -241,6 +266,9 @@ def run_auto(design, *, runner=_run_one, tomtom=None, net_path=None, progress=No
         "tomtom_requested":20,"score_formula":SCORE_DESCRIPTION,
         "selection":selection,"runs":rows,"warnings":notes,
         "quality":{"rejected_trials":failures,
+                   "drain_timeouts":drain_timeout,
+                   "total_timing_adjustments":cycle_tuned,
+                   "total_offset_only_adjustments":offset_only,
                    "accepted_periods":sum(x["accepted"] for x in selection["decisions"])},
     }
 
@@ -261,6 +289,9 @@ def report_md(study):
         "Design: 10 periods x 10 candidate plans x 5 matched random seeds.",
         f"Training: {study['selection']['training_seeds']}; held-out: {study['selection']['validation_seeds']}",
         f"TomTom route predictions: {study['tomtom_success']} of 20 attempted",
+        f"Runs reaching drain cap: {study['quality']['drain_timeouts']}/500",
+        f"Time-program retunings: {study['quality']['total_timing_adjustments']}",
+        f"Original-plan offset-only changes: {study['quality']['total_offset_only_adjustments']}",
         f"Network fingerprint: {study['network_sha256']}",
         f"Objective: {study['score_formula']}",
         "",
@@ -274,7 +305,9 @@ def report_md(study):
     lines.extend([
         "", "Candidates must have >=85% completed trips and at least one controlled signal. "
         "A winner is chosen on 3 seeds and must outperform zero-offset baseline on "
-        "the 2 unused seeds, without reducing completion by >2 percentage points.",
+        "the 2 unused seeds, without reducing completion by >2 percentage points. "
+        "SUMO stops injecting at the requested duration, then continues to drain "
+        "in-flight traffic up to the configured drain cap.",
         "", "## TomTom evidence","",
         "At most 20 contextual TomTom historical-typical route predictions are fetched, "
         "not 500. They are not observed vehicle counts, not guaranteed to match "
@@ -289,6 +322,7 @@ def report_md(study):
         "recommended_schedule.csv: time-specific hypothetical policies.",
         "tomtom_reference.csv: external route-time reference classifications.",
         "study.json: reproducible source inputs, results, hashes and warnings.",
+        "TomTom route-length asymmetry >=1.75x is flagged as unreliable for calibration.",
     ])
     return "\n".join(lines)+"\n"
 
