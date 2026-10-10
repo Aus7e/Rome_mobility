@@ -112,4 +112,4 @@ def test_tomtom_auth_diagnostic_is_available_in_key_dialog():
     assert 'id="tomtomTestBtn"' in html
     assert 'id="tomtomValidationStatus"' in html
     assert '"/api/traffic/check-key"' in script
-    assert '"api_key:key"' not in script  # request is sent in a JSON object
+    assert "body:JSON.stringify({api_key:key})" in script
