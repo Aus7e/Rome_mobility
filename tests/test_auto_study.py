@@ -60,6 +60,7 @@ def test_quality_gate_disqualifies_incomplete_or_uncontrolled_runs():
     assert model_score({**typical,"completion_rate":.65}) is None
     assert model_score({**typical,"controlled_lights":0}) is None
     assert model_score({**typical,"avg_delay_s":None}) is None
+    assert model_score({**typical,"drain_timed_out":True,"completion_rate":.90}) is None
 
 
 def test_full_study_exports_all_results_and_no_credentials(tmp_path):
@@ -76,6 +77,7 @@ def test_full_study_exports_all_results_and_no_credentials(tmp_path):
     assert report["simulations"]==500
     assert report["tomtom_success"]==1
     assert report["quality"]["accepted_periods"]==10
+    assert report["quality"]["drain_timeouts"]==0
     assert report["selection"]["training_seeds"]==[77,78,79]
     assert report["selection"]["validation_seeds"]==[80,81]
     assert all(x["recommended"].startswith("wave_outbound")
