@@ -37,6 +37,8 @@ def test_provider_data_never_claims_field_observation(monkeypatch):
         assert request.url.params["key"] == "TEST_SECRET_DO_NOT_LEAK"
         assert request.url.params["traffic"] == "false"
         assert request.url.params["computeTravelTimeFor"] == "all"
+        assert request.url.params["routeRepresentation"] == "summaryOnly"
+        assert request.url.params.get("computeBestOrder") != "true"
         assert request.url.params["departAt"].endswith("+02:00")
         return httpx.Response(200, json={
             "routes": [{
@@ -198,3 +200,32 @@ def test_route_401_is_human_actionable_and_does_not_leak_key(monkeypatch):
             get_typical_traffic(date(2026,10,14),8,"outbound",
                                 network=OSM_INFO,client=client)
     assert "A_SECRET_FOR_TEST" not in str(error.value)
+
+
+
+def test_typical_route_rejects_incompatible_none_representation():
+    """Regression: TomTom v1 returns HTTP 400 for none without best-order optimization."""
+    import app.traffic_reference as module
+    captured=[]
+    def handler(req):
+        captured.append(dict(req.url.params))
+        if req.url.params.get("routeRepresentation") == "none":
+            return httpx.Response(400, json={"detailedError":{
+                "code":"BAD_INPUT","message":"Cannot use routeRepresentation=none"
+            }})
+        assert req.url.params.get("routeRepresentation") == "summaryOnly"
+        assert req.url.params.get("computeBestOrder") != "true"
+        return httpx.Response(200, json={"routes":[{"summary":{
+            "historicTrafficTravelTimeInSeconds":990,
+            "noTrafficTravelTimeInSeconds":720,
+            "travelTimeInSeconds":1000,
+            "lengthInMeters":9600
+        }}]})
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result=module.get_typical_traffic(
+            date(2026,10,14),8,"outbound",network=OSM_INFO,
+            api_key="TEST_ONLY_KEY",client=client,
+            now=datetime(2026,10,10,9,tzinfo=ROME))
+    assert result["travel_time_typical_s"] == 990
+    assert len(captured) == 1
+    assert captured[0]["routeRepresentation"] == "summaryOnly"
