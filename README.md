@@ -421,3 +421,10 @@ no eligible timing plans. This does NOT prove the baseline plan is best.
 simulation horizon and must not be compared as if the new model were
 the same. Measured counts, actual municipal signal phases and held-out
 field travel times are still required for a validated real-world claim.
+
+
+## Multi-area observed traffic query
+
+The hourly observation API now requires an explicit area: 
+GET /api/observations/at?day=2026-10-09&hour=8&area=centro
+Missing or unknown area IDs produce HTTP 422. Legacy CSV data without an area column remains associated with Salaria only, and cannot be reused for unrelated zones.
