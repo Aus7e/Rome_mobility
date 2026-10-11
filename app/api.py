@@ -122,11 +122,11 @@ def observations_status():
 
 @app.get("/api/observations/at")
 def observations_at(day: date, hour: int = Query(ge=0, le=23),
-                    area: str = "salaria"):
+                    area: str = Query(..., description="ID area from /api/sumo/areas")):
     _area_or_422(area)
     from app.observations import demand_for
     try:
-        return demand_for(day, hour) if area=="salaria" else demand_for(day, hour,area=area)
+        return demand_for(day, hour, area=area)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

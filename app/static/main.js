@@ -605,7 +605,7 @@ async function refreshObservationHour(){
     $("hourlyCoverage").textContent="Domanda sintetica, non osservata.";return;
   }
   try{
-    const q=new URLSearchParams({day:$("day").value,hour:String($("hour").value)});
+    const q=new URLSearchParams({day:$("day").value,hour:String($("hour").value),area:$("area").value});
     const datum=await api("/api/observations/at?"+q.toString());
     $("hourlyCoverage").textContent="Ora "+String(datum.hour).padStart(2,"0")+
       ":00 · GRA: "+datum.outbound_vph+" veicoli/h · Centro: "+
