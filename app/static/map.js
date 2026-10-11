@@ -1,9 +1,11 @@
 /* Map-first Rome Mobility view: Leaflet is bundled locally.
    Street tiles are © OpenStreetMap contributors; no live-traffic overlay. */
-let map, roadLayer, signalLayer, carLayer, startMarker, endMarker;
+let map, roadLayer, zoneLayer, signalLayer, carLayer, startMarker, endMarker;
 let markerBySignal = new Map();
 let signalVisible = true;
 let currentNetwork = null;
+let zoneCatalog = [];
+let selectedZone = "salaria";
 let carMarkers = new Map();
 let tiled = false;
 let canvasRenderer;
@@ -91,6 +93,9 @@ export function setupStreetMap(onSignalClick) {
     }
   });
   roadLayer=L().layerGroup().addTo(map);
+  // A separate overlay persists while the selected SUMO network changes.
+  // An outline is NOT evidence that OSM roads have been imported.
+  zoneLayer=L().layerGroup().addTo(map);
   signalLayer=L().layerGroup().addTo(map);
   carLayer=L().layerGroup().addTo(map);
   $("mapZoomIn").addEventListener("click",()=>map.zoomIn());
@@ -108,6 +113,44 @@ export function setupStreetMap(onSignalClick) {
   map.__onSignalClick=onSignalClick;
 }
 
+/**
+ * Show all research-area boundaries without fabricating unprepared roads.
+ * Blue: selected area. Teal: other prepared network. Grey dashed:
+ * catalogued but not prepared. Boundaries may overlap.
+ */
+export function updateRomeZoneOutlines(areas, selected) {
+  zoneCatalog=Array.isArray(areas)?areas.filter(a=>
+    Array.isArray(a.bbox)&&a.bbox.length===4):[];
+  selectedZone=selected;
+  if(!map||!zoneLayer)return;
+  zoneLayer.clearLayers();
+  for(const area of zoneCatalog){
+    const [south,west,north,east]=area.bbox;
+    if(![south,west,north,east].every(Number.isFinite))continue;
+    const active=area.id===selected;
+    const ready=Boolean(area.ready);
+    const color=active?"#1b63de":ready?"#118c85":"#8396ac";
+    const bounds=[[south,west],[north,east]];
+    const rect=L().rectangle(bounds,{
+      color,weight:active?3:1.5,opacity:active?.94:ready?.68:.43,
+      dashArray:active?null:ready?"7 4":"3 6",
+      fillColor:color,fillOpacity:active?.035:0,
+      interactive:false,
+    });
+    zoneLayer.addLayer(rect);
+  }
+}
+
+export function fitAllRomeZones() {
+  if(!map||!zoneCatalog.length)return;
+  const points=[];
+  for(const area of zoneCatalog){
+    const [s,w,n,e]=area.bbox;
+    points.push([s,w],[n,e]);
+  }
+  map.fitBounds(L().latLngBounds(points),{padding:[30,30],animate:false});
+}
+
 export function updateStreetNetwork(network, inventory) {
   currentNetwork=network;
   if(!map || !network?.points?.length)return;
@@ -118,23 +161,37 @@ export function updateStreetNetwork(network, inventory) {
   carMarkers.clear();
   const line=network.points.map(p=>[p[0],p[1]]);
   const isApproximate=network.source==="synthetic_demo";
-  const halo=L().polyline(line,{color:isApproximate?"#dda154":"#ffffff",
-    weight:network.regional?5:13,opacity:0.78,lineJoin:"round",interactive:false});
-  const route=L().polyline(line,{color:isApproximate?"#e5a154":"#3478f6",
-    weight:network.regional?3:7,opacity:0.96,lineJoin:"round",
-    dashArray:network.regional?"7 7":null});
-  roadLayer.addLayer(halo);roadLayer.addLayer(route);
-  route.bindTooltip(network.regional?"Direttrice di riferimento · "+network.focus_road+
-    " (non è il solo percorso simulato)":isApproximate?"Percorso indicativo, non verificato":
-    "Via Salaria · asse da OSM/SUMO",{sticky:true});
-  // Sparse cross-street context already exists in SUMO network.
-  for(const road of (network.roads || []).slice(0,network.regional?4500:450)){
+  // Draw *all actual imported SUMO streets* first, THEN the focus route
+  // so side-road strokes cannot obscure the blue route as before.
+  // Regional streets are blue only when this region's SUMO network is loaded.
+  const roads=(network.roads||[]).slice(0,network.regional?4500:450);
+  for(const road of roads){
     if(!road.points || road.points.length<2)continue;
+    const width=Math.min(network.regional?3.8:4.5,
+                         Math.max(1.3,(road.width_m||8)/5.5));
     roadLayer.addLayer(L().polyline(road.points,{
-      color:"#8799ac",weight:Math.min(5,Math.max(2,road.width_m/4)),
-      opacity:0.48,interactive:false
+      color:network.regional?"#4289e8":"#8daeca",
+      weight:width,opacity:network.regional?.62:.45,interactive:false,
+      renderer:canvasRenderer,
     }));
   }
+  // This brighter line is an illustrative reference corridor, NOT the
+  // route of every car; real SUMO vehicles use their actual geocoordinates.
+  const halo=L().polyline(line,{
+    color:"#ffffff",weight:network.regional?5:11,
+    opacity:.8,lineJoin:"round",interactive:false,renderer:canvasRenderer,
+  });
+  const route=L().polyline(line,{
+    color:isApproximate?"#e5a154":"#165fde",
+    weight:network.regional?3:6,opacity:.96,lineJoin:"round",
+    dashArray:network.regional?"7 6":null,renderer:canvasRenderer,
+  });
+  roadLayer.addLayer(halo);roadLayer.addLayer(route);
+  route.bindTooltip(network.regional
+    ?"Direttrice di riferimento: "+(network.focus_road||"via principale")+
+      " · le altre strade blu appartengono alla rete SUMO caricata"
+    :isApproximate?"Percorso indicativo, non verificato":
+      "Via Salaria · asse da OSM/SUMO",{sticky:true});
   if(startMarker)roadLayer.removeLayer(startMarker);
   if(endMarker)roadLayer.removeLayer(endMarker);
   if(!network.regional){
@@ -142,11 +199,8 @@ export function updateStreetNetwork(network, inventory) {
     endMarker=L().marker(line.at(-1),{icon:labelIcon("GRA","end")}).addTo(roadLayer);
   }else{
     startMarker=null;endMarker=null;
-    if(network.area_bbox)
-      roadLayer.addLayer(L().rectangle(
-        [[network.area_bbox[0],network.area_bbox[1]],
-         [network.area_bbox[2],network.area_bbox[3]]],
-        {color:"#3478f6",weight:2,fillOpacity:0.04,dashArray:"5 7"}));
+    // The shared zone overlay draws boundaries and remains visible
+    // when changing the loaded road geometry.
   }
   const matching=inventory?.matches||[];
   for(const signal of network.signals||[]) {
@@ -181,13 +235,21 @@ export function showRegionalStudyExtent(bbox,name="Area selezionata"){
   markerBySignal.clear();
   const [south,west,north,east]=bbox||[41.904,12.460,42.038,12.616];
   const bounds=L().latLngBounds([[south,west],[north,east]]);
-  roadLayer.addLayer(L().rectangle(bounds,{color:"#2470d8",weight:2,fillColor:"#4f9cf5",
-                                       fillOpacity:0.08,dashArray:"6 5"}));
+  // Zone overlay already marks the selected region and the other ten.
+  // The selected outline is emphasized separately when no network exists.
   map.fitBounds(bounds.pad(0.08),{animate:false});
   $("routeDistance").textContent=name;
 }
 export function fitStreetRoute(){
-  if(!map||!currentNetwork?.points?.length)return;
+  if(!map)return;
+  if(!currentNetwork?.points?.length){
+    const area=zoneCatalog.find(a=>a.id===selectedZone);
+    if(area?.bbox){
+      const [south,west,north,east]=area.bbox;
+      map.fitBounds([[south,west],[north,east]],{padding:[24,24],animate:false});
+    }
+    return;
+  }
   const bounds=L().latLngBounds(currentNetwork.points.map(p=>[p[0],p[1]]));
   if(currentNetwork.regional && currentNetwork.area_bbox){
     const [south,west,north,east]=currentNetwork.area_bbox;
@@ -211,7 +273,7 @@ export function searchRoutePoints(query){
   if(!currentNetwork)return [];
   const needle=query.trim().toLocaleLowerCase("it");
   if(!needle)return [];
-  const entries=[
+  const entries=currentNetwork.regional?[]:[
     {type:"start",label:"Prati Fiscali · inizio percorso",point:currentNetwork.points[0]},
     {type:"end",label:"Grande Raccordo Anulare · fine percorso",point:currentNetwork.points.at(-1)}
   ];
