@@ -11,7 +11,7 @@ from app.research import ResearchRequest, run_study
 from app.auto_study import AutoStudyRequest, run_auto, report_zip
 from app.network import ROOT
 from app.sumo_runner import run_sumo
-from app.areas import network_path
+from app.areas import AREAS, network_path
 
 _LOCK=RLock()
 _POOL=ThreadPoolExecutor(max_workers=1,thread_name_prefix="rome-sumo")
@@ -61,7 +61,7 @@ def latest_setup(area="salaria"):
 def submit(kind,request=None):
     if kind not in {"setup","run","compare","research","auto"}:
         raise ValueError("Unsupported job type")
-    if kind=="setup" and request not in {None,"salaria","nord_est"}:
+    if kind=="setup" and (request or "salaria") not in AREAS:
         raise ValueError("Unknown study area")
     if kind=="auto" and not isinstance(request,AutoStudyRequest):
         raise ValueError("AutoStudyRequest required")
@@ -109,7 +109,7 @@ def _execute(jid,kind,request):
             process=subprocess.run(
                 [sys.executable,str(ROOT/"scripts"/"bootstrap_sumo.py"),
                  "--area", request or "salaria"],
-                cwd=str(ROOT),capture_output=True,text=True,timeout=1800,
+                cwd=str(ROOT),capture_output=True,text=True,timeout=2700,
                 check=False,
             )
             if process.returncode:

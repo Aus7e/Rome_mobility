@@ -78,7 +78,7 @@ def test_seed_input_bounded_unique():
 
 def test_research_job_requires_ready_sumo(monkeypatch):
     from app import sumo_runner
-    monkeypatch.setattr(sumo_runner, "status", lambda: {
+    monkeypatch.setattr(sumo_runner, "status", lambda area="salaria": {
         "installed": True, "netconvert": True,
         "python_modules": True, "network_ready": False, "available": False
     })

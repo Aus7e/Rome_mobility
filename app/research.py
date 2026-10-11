@@ -136,8 +136,8 @@ def run_study(design: ResearchRequest, *, simulate=run_sumo, net_path=None, prog
     observed_data = None
     start_dataset_hash = None
     if design.scenario.traffic_source == "hourly_counts":
-        from app.observations import demand_for
-        observed_data = demand_for(design.scenario.day, design.scenario.hour)
+        from app.observations import demand_for_area
+        observed_data = demand_for_area(design.scenario.day, design.scenario.hour,design.scenario.area)
         start_dataset_hash = observed_data["csv_sha256"]
     count = len(design.seeds)
     workers = allowed_workers(design.workers) if simulate is run_sumo else 1

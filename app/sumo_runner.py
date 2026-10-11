@@ -20,7 +20,7 @@ import threading
 
 from app.engine import demand_factor
 from app.simulation_quality import drain_deadline
-from app.areas import network_path, area_from_network
+from app.areas import AREAS, network_path, area_from_network
 from app.models import SimulationRequest
 from app.network import ROOT, closest_fraction, current_network, extract_osm, lengths, meters, subset_network
 
@@ -68,42 +68,60 @@ def _to_latlon(net, x, y, geo):
     return [41.965 + y / 111_195, 12.505 + x/(111_195*.74)]
 
 
-def _axis_from_sumo(net):
-    """Construct an axis from name-tagged SUMO edges, retaining real edge shapes.
+def _axis_from_sumo(net, area="salaria"):
+    """Choose an OSM-derived focus corridor for the selected study zone.
 
-    Fallback to OSM cache only if SUMO graph extraction fails.
+    Regional movement is simulated on *all* imported vehicle edges, not
+    only along this reference/visualization polyline.
     """
-    geo = _real_geo(net)
-    elements=[]
+    geo=_real_geo(net)
+    candidate_names=AREAS[area]["focus_roads"]
+    named={}
+    by_name={}
     for edge in net.getEdges():
-        if "salaria" not in (edge.getName() or "").lower():
+        if edge.getFunction()=="internal" or not edge.allows("passenger"):
             continue
         coords=edge.getShape()
-        if len(coords)<2:
+        if len(coords)<2:continue
+        name=(edge.getName() or "").lower().strip()
+        if not name:continue
+        by_name.setdefault(name,[]).append(edge)
+        for term in candidate_names:
+            if term in name:named.setdefault(term,[]).append(edge)
+    def build(edges,focus):
+        elements=[]
+        for edge in edges:
+            coords=edge.getShape()
+            ids=[edge.getFromNode().getID()]
+            ids += [edge.getID()+":"+str(j) for j in range(1,len(coords)-1)]
+            ids.append(edge.getToNode().getID())
+            elements.append({
+                "type":"way","nodes":ids,
+                "geometry":[{"lat":lat,"lon":lon} for lat,lon in
+                     (_to_latlon(net,x,y,geo) for x,y in coords)],
+            })
+        result=extract_osm({"elements":elements},min_component_nodes=2)
+        result["quality"]="SUMO reference corridor derived from local OSM streets; timings unverified"
+        result["source"]="sumo_osm"
+        result["focus_road"]=focus
+        return result
+    for term in candidate_names:
+        if term not in named:continue
+        try:
+            result=build(named[term],term)
+            if result["length_m"]>100:return result
+        except ValueError:
             continue
-        # Endpoint nodes are connected across edge pieces; internal vertices are unique.
-        ids=[edge.getFromNode().getID()]
-        for j in range(1,len(coords)-1):
-            ids.append(edge.getID()+":"+str(j))
-        ids.append(edge.getToNode().getID())
-        elements.append({"type":"way","nodes":ids,
-                        "geometry":[{"lat":loc[0],"lon":loc[1]} for loc in
-                                    (_to_latlon(net, x, y,geo) for x,y in coords)]})
-    try:
-        # netconvert collapses straight intermediate road nodes.
-        path=extract_osm({"elements":elements},min_component_nodes=2)
-        path["quality"]="SUMO roadway centerline derived from OSM import; signals from TLS controllers"
-        path["source"]="sumo_osm"
-        return path
-    except ValueError:
-        cached=current_network()
-        if cached["source"]=="synthetic_demo":
-            raise RuntimeError("SUMO network contains no continuous named Salaria axis; cannot overlay as real Rome")
-        return {**cached,"source":"sumo_axis_from_cached_osm",
-                "quality":"OSM cached corridor. SUMO roads/vehicles use network coordinates."}
+    # Never use cached Salaria geometry for an unrelated Rome zone.
+    for name,edges in sorted(by_name.items(),
+                            key=lambda item:sum(e.getLength() for e in item[1]),
+                            reverse=True)[:15]:
+        try:return build(edges,name)
+        except ValueError:continue
+    raise RuntimeError(f"No connected named road for the {area} SUMO network")
 
 
-@lru_cache(maxsize=12)
+@lru_cache(maxsize=24)
 def load_network(segment="full", net_path=NET_FILE):
     _, sumolib=_imports()
     if not Path(net_path).is_file():
@@ -111,10 +129,12 @@ def load_network(segment="full", net_path=NET_FILE):
     net=sumolib.net.readNet(str(net_path),withInternal=False)
     geo=_real_geo(net)
     area=area_from_network(net_path)
-    if area == "nord_est" and segment != "full":
-        raise ValueError("For Roma Nord-Est select the full network")
-    axis=subset_network(_axis_from_sumo(net),segment)
-    regional = area == "nord_est"
+    if area != "salaria" and segment != "full":
+        raise ValueError("Regional Rome zones require the entire area")
+    axis=subset_network(_axis_from_sumo(net,area),segment)
+    regional = area != "salaria"
+    focus_roads=AREAS[area]["focus_roads"]
+    focus=axis.get("focus_road",focus_roads[0])
     roadset=[]
     usable=[]
     for edge in net.getEdges():
@@ -125,7 +145,7 @@ def load_network(segment="full", net_path=NET_FILE):
         shape=[_to_latlon(net,x,y,geo) for x,y in edge.getShape()]
         if not shape:
             continue
-        if regional and "salaria" not in (edge.getName() or "").lower():
+        if regional and focus not in (edge.getName() or "").lower():
             # Avoid O(number of regional edges * axis vertices) GIS projection
             # on every local street: s is unused for regional cross-city OD.
             near, s = 1000.0, axis["length_m"] / 2
@@ -138,7 +158,7 @@ def load_network(segment="full", net_path=NET_FILE):
                        "lat":center[0],"lon":center[1],
                        "name":edge.getName() or "",
                        "length_m":edge.getLength()})
-        if len(roadset)<(5500 if regional else 2000):
+        if len(roadset)<(3200 if regional else 2000):
             roadset.append({"id":edge.getID(),"name":edge.getName() or "",
                             "points":shape, "width_m":max(3, min(18, 3*edge.getLaneNumber()))})
     signals=[]
@@ -152,14 +172,18 @@ def load_network(segment="full", net_path=NET_FILE):
         if not regional and (near>130 or s<0 or s>axis["length_m"]):
             continue
         indices=sorted({linkidx for inlane,outlane,linkidx in connections
-                        if "salaria" in (inlane.getEdge().getName() or "").lower()})
+                        if focus in (inlane.getEdge().getName() or "").lower()})
+        if regional and not indices:
+            indices=sorted({linkidx for inlane,outlane,linkidx in connections})
         signals.append({"id":tls.getID(),"s_m":round(s,1),"lat":lat,"lon":lon,
                         "source":"sumo_imported_tls","label":"SUMO controller "+tls.getID(),
                         "main_link_indices":indices,
                         "distance_from_axis_m":round(near,1)})
     signals.sort(key=lambda x:x["s_m"])
     return {**axis,"source":"sumo_osm","area":area,
-            "area_bbox":(41.904,12.460,42.038,12.616) if regional else None,
+            "area_name":AREAS[area]["name"],"focus_roads":list(focus_roads),
+            "area_bbox":AREAS[area]["bbox"],
+            "geometry_role":"regional_reference_corridor" if regional else "salaria_main_axis",
             "regional":regional,
             "roads":roadset,"signals":signals,
             "geo_valid":geo,"usable_edges":usable,
@@ -259,12 +283,29 @@ def _configure_lights(conn, net, request, info, warn):
                 if not link:continue
                 try:
                     incoming=conn.lane.getEdgeID(link[0])
-                    if _is_salaria_approach(net,net.getEdge(incoming),info["points"]):
+                    edge=net.getEdge(incoming)
+                    if info["regional"]:
+                        if any(term in (edge.getName() or "").lower()
+                               for term in info["focus_roads"]):
+                            main_idx.add(idx)
+                    elif _is_salaria_approach(net,edge,info["points"]):
                         main_idx.add(idx)
                 except (KeyError,ValueError):
                     continue
+        if not main_idx and info["regional"]:
+            approaches={}
+            for idx,linkset in enumerate(links):
+                for link in linkset or ():
+                    if not link:continue
+                    try:
+                        edge=net.getEdge(conn.lane.getEdgeID(link[0]))
+                        if edge.allows("passenger"):
+                            approaches.setdefault(edge.getID(),set()).add(idx)
+                    except (KeyError,ValueError):pass
+            if approaches:
+                main_idx=max(approaches.values(),key=len)
         if not main_idx:
-            warn.append("No identifiable aligned Salaria approach: "+tid);continue
+            warn.append("No controllable vehicle approach: "+tid);continue
         score=[sum(1 for i in main_idx if i<len(p.state) and p.state[i] in "gG")
                for p in logic.phases]
         primary=max(range(len(score)),key=lambda k:score[k])
@@ -310,14 +351,20 @@ def _configure_lights(conn, net, request, info, warn):
 
 
 
-def _route_catalog(conn, net, edgeinfo, length_m, seed, warnings, regional=False):
+def _route_catalog(conn, net, edgeinfo, length_m, seed, warnings, regional=False, focus_road="salaria"):
     rng=random.Random(seed)
-    main=[e for e in edgeinfo if "salaria" in e["name"].lower() and e["distance_m"]<110]
-    side=[e for e in edgeinfo if "salaria" not in e["name"].lower() and e["distance_m"]<320]
+    main=[e for e in edgeinfo if focus_road in e["name"].lower()
+          and e["distance_m"]<150]
+    side=[e for e in edgeinfo if focus_road not in e["name"].lower()
+          and (regional or e["distance_m"]<320)]
     # Restrict origin/destination to opposite corridor ends for through traffic.
     low=[e for e in main if e["s_m"]<length_m*.28]
     high=[e for e in main if e["s_m"]>length_m*.72]
-    near_side=[e for e in side if length_m*.1<e["s_m"]<length_m*.9]
+    near_side=[e for e in side if
+               (regional and e["length_m"]>=30)
+               or (not regional and length_m*.1<e["s_m"]<length_m*.9)]
+    if regional and len(near_side)>400:
+        near_side=random.Random(seed+819).sample(near_side,400)
     def discover(starts, ends, group, attempts=45):
         pairs=[]
         if not starts or not ends:
@@ -390,8 +437,8 @@ def _states(conn,signals):
 
 
 def _run(request: SimulationRequest, *, net_path=NET_FILE, frames=True, progress=None):
-    if request.area == "nord_est" and request.segment != "full":
-        raise ValueError("Roma Nord-Est requires the complete geographic region")
+    if request.area != "salaria" and request.segment != "full":
+        raise ValueError("Regional Rome zones require the entire study area")
     traci,sumolib=_imports()
     info=load_network(request.segment,net_path)
     if not info["geo_valid"]:
@@ -420,8 +467,10 @@ def _run(request: SimulationRequest, *, net_path=NET_FILE, frames=True, progress
         conn.vehicletype.setMinGap("lab_passenger",2.5+.2*request.rain_mm_h)
         # Actual SUMO-calculated braking, junction conflicts, turns and queues.
         adjusted=_configure_lights(conn,net,request,info,warnings)
-        routes=_route_catalog(conn,net,info["usable_edges"],info["length_m"],request.seed,warnings,regional=info["regional"])
-        if not routes["outbound"] and not routes["inbound"] and not routes["side_in"]:
+        routes=_route_catalog(conn,net,info["usable_edges"],info["length_m"],
+                              request.seed,warnings,regional=info["regional"],
+                              focus_road=info.get("focus_road","salaria"))
+        if not any(routes.values()):
             raise RuntimeError("No routable trips found. Check OSM/SUMO road connectivity.")
         dt=1
         rng=random.Random(request.seed)
@@ -441,8 +490,8 @@ def _run(request: SimulationRequest, *, net_path=NET_FILE, frames=True, progress
         waiting_queue=0
         observed = None
         if request.traffic_source == "hourly_counts":
-            from app.observations import demand_for
-            observed = demand_for(request.day, request.hour)
+            from app.observations import demand_for_area
+            observed = demand_for_area(request.day, request.hour, request.area)
             factor = 1.0
             out_rate = observed["outbound_vph"] / 3600
             in_rate = observed["inbound_vph"] / 3600

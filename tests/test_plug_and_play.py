@@ -7,7 +7,7 @@ from app import api, sumo_jobs, sumo_runner
 def test_startup_automatically_schedules_real_network_setup(monkeypatch):
     monkeypatch.delenv("SALARIA_AUTO_SETUP", raising=False)
     submitted = []
-    monkeypatch.setattr(sumo_runner, "status", lambda: {"netconvert": True, "available": False})
+    monkeypatch.setattr(sumo_runner, "status", lambda area="salaria": {"netconvert": True, "available": False})
     monkeypatch.setattr(sumo_jobs, "submit", lambda kind: submitted.append(kind))
     with TestClient(api.app) as client:
         assert client.get("/health").status_code == 200
@@ -17,7 +17,7 @@ def test_startup_automatically_schedules_real_network_setup(monkeypatch):
 def test_startup_skips_when_network_ready(monkeypatch):
     monkeypatch.delenv("SALARIA_AUTO_SETUP", raising=False)
     submitted = []
-    monkeypatch.setattr(sumo_runner, "status", lambda: {"netconvert": True, "available": True})
+    monkeypatch.setattr(sumo_runner, "status", lambda area="salaria": {"netconvert": True, "available": True})
     monkeypatch.setattr(sumo_jobs, "submit", lambda kind: submitted.append(kind))
     with TestClient(api.app) as client:
         assert client.get("/health").status_code == 200
@@ -27,7 +27,7 @@ def test_startup_skips_when_network_ready(monkeypatch):
 def test_startup_can_be_disabled_for_offline_smoke_tests(monkeypatch):
     monkeypatch.setenv("SALARIA_AUTO_SETUP", "0")
     submitted = []
-    monkeypatch.setattr(sumo_runner, "status", lambda: {"netconvert": True, "available": False})
+    monkeypatch.setattr(sumo_runner, "status", lambda area="salaria": {"netconvert": True, "available": False})
     monkeypatch.setattr(sumo_jobs, "submit", lambda kind: submitted.append(kind))
     with TestClient(api.app) as client:
         assert client.get("/health").status_code == 200
@@ -43,8 +43,8 @@ def test_setup_request_reuses_existing_running_job(monkeypatch):
 
 
 def test_status_displays_import_progress(monkeypatch):
-    monkeypatch.setattr(sumo_runner, "status", lambda: {"available": False, "netconvert": True})
-    monkeypatch.setattr(sumo_jobs, "latest_setup", lambda: {"status": "running", "progress": .15})
+    monkeypatch.setattr(sumo_runner, "status", lambda area="salaria": {"available": False, "netconvert": True})
+    monkeypatch.setattr(sumo_jobs, "latest_setup", lambda area="salaria": {"status": "running", "progress": .15})
     response = TestClient(api.app).get("/api/sumo/status")
     assert response.status_code == 200
     assert response.json()["mode"] == "preparing"

@@ -147,7 +147,7 @@ def select_winners(rows, base):
 
 def _fetch_tomtom(design, progress=None, provider=get_typical_traffic):
     from app.sumo_runner import load_network
-    net=load_network("full",network_path("salaria"))
+    net=load_network("full",network_path(design.scenario.area))
     references=[]
     notes=[]
     for i,period in enumerate(study_periods(design.scenario)):
@@ -165,6 +165,8 @@ def _fetch_tomtom(design, progress=None, provider=get_typical_traffic):
                     "length_m":row.get("length_m"),
                     "prediction_departure":row["prediction_departure"],
                     "classification":"PROVIDER_ROUTE_PREDICTION_NOT_TRAFFIC_COUNT",
+                    "study_area":design.scenario.area,
+                    "route_focus":net.get("focus_road","salaria"),
                 })
             except (RuntimeError,ValueError) as exc:
                 # The TomTom helper suppresses credential-bearing raw response bodies.
@@ -200,10 +202,10 @@ def run_auto(design, *, runner=_run_one, tomtom=None, net_path=None, progress=No
     fingerprint=hashlib.sha256(net.read_bytes()).hexdigest()
     source_fingerprints={}
     if design.scenario.traffic_source=="hourly_counts":
-        from app.observations import demand_for
+        from app.observations import demand_for_area
         for period in study_periods(design.scenario):
-            source_fingerprints[period["id"]]=demand_for(
-                date.fromisoformat(period["date"]),period["hour"])["csv_sha256"]
+            source_fingerprints[period["id"]]=demand_for_area(
+                date.fromisoformat(period["date"]),period["hour"],design.scenario.area)["csv_sha256"]
     if progress: progress(0,"Retrieving TomTom reference times")
     references,notes=tomtom if tomtom is not None else _fetch_tomtom(design,progress)
     tasks=plan(design.scenario)
@@ -231,7 +233,7 @@ def run_auto(design, *, runner=_run_one, tomtom=None, net_path=None, progress=No
     if source_fingerprints:
         from app.observations import demand_for
         for period in study_periods(design.scenario):
-            if demand_for(date.fromisoformat(period["date"]),period["hour"])["csv_sha256"]!=source_fingerprints[period["id"]]:
+            if demand_for_area(date.fromisoformat(period["date"]),period["hour"],design.scenario.area)["csv_sha256"]!=source_fingerprints[period["id"]]:
                 raise RuntimeError("Hourly traffic dataset changed during experiment")
     for row in rows:
         row["score"]=model_score(row["metrics"])
@@ -247,7 +249,7 @@ def run_auto(design, *, runner=_run_one, tomtom=None, net_path=None, progress=No
         f"{failures}/500 simulation runs had incomplete trips or no valid signal control.",
         "Best configurations are hypothetical, not real Rome municipal light timings.",
         "Only controllers with identifiable Salaria approaches are retimed; other roads may be affected.",
-        "TomTom estimates apply to Salaria route, not the whole regional OD network.",
+        "TomTom estimates cover one area reference corridor, not all OD trips in the selected region.",
         "TomTom Route API predicts historical-typical journey times, NOT hourly vehicle volumes.",
         "TomTom estimates were NOT used to infer demand or directly optimize SUMO light settings.",
         "Three training and two holdout seeds per candidate are exploratory, not field validation.",

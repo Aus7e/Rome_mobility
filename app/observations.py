@@ -14,6 +14,7 @@ from pathlib import Path
 from threading import Lock
 
 from app.network import ROOT
+from app.areas import AREAS
 
 DATA_FILE = ROOT / "data" / "observations" / "hourly_counts.json"
 _LOCK = Lock()
@@ -41,10 +42,13 @@ def validate_csv(contents: bytes) -> dict:
     unique = set()
     try:
         for line, source in enumerate(reader, 2):
-            if len(rows) >= 96:
-                raise ValueError("CSV supports a maximum of 96 hourly rows")
+            if len(rows) >= 1200:
+                raise ValueError("CSV supports a maximum of 1200 area-specific hourly rows")
             if None in source:
                 raise ValueError(f"Line {line}: unexpected additional CSV columns")
+            area = (source.get("area") or "salaria").strip().lower()
+            if area not in AREAS:
+                raise ValueError(f"Line {line}: invalid Rome study area {area}")
             day_type = (source.get("day_type") or "").strip().lower()
             direction = (source.get("direction") or "").strip().lower()
             kind = (source.get("kind") or "").strip().lower()
@@ -65,17 +69,17 @@ def validate_csv(contents: bytes) -> dict:
                 if not label or len(label) > 250:
                     raise ValueError(f"Line {line}: {field} is required (up to 250 chars)")
                 values[field] = label
-            key = (day_type, hour, direction)
+            key = (area, day_type, hour, direction)
             if key in unique:
-                raise ValueError(f"Line {line}: duplicate {day_type}, {hour}, {direction}")
+                raise ValueError(f"Line {line}: duplicate {area}, {day_type}, {hour}, {direction}")
             unique.add(key)
-            rows.append({"day_type": day_type, "hour": hour, "direction": direction,
+            rows.append({"area": area, "day_type": day_type, "hour": hour, "direction": direction,
                          "vehicles_per_hour": int(volume), "kind": kind, **values})
     except csv.Error as exc:
         raise ValueError("Malformed CSV") from exc
     if not rows:
         raise ValueError("CSV has no observations")
-    rows.sort(key=lambda x: (x["day_type"], x["hour"], x["direction"]))
+    rows.sort(key=lambda x: (x["area"], x["day_type"], x["hour"], x["direction"]))
     return {
         "schema_version": "hourly-traffic-1",
         "imported_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -115,11 +119,13 @@ def describe(bundle=None) -> dict:
         return {"available": False, "rows": 0, "coverage": [], "source_classes": [],
                 "note": "No field counts or licensed hourly volume estimates loaded."}
     rows = bundle["observations"]
-    pairs = {(r["day_type"], r["hour"], r["direction"]) for r in rows}
+    pairs = {(r.get("area","salaria"),r["day_type"],r["hour"],r["direction"]) for r in rows}
     coverage = [
-        {"day_type": day, "hour": hour, "complete": all((day, hour, d) in pairs for d in DIRECTIONS)}
+        {"area": area,"day_type": day, "hour": hour,
+         "complete": all((area,day,hour,d) in pairs for d in DIRECTIONS)}
+        for area in sorted({r.get("area","salaria") for r in rows})
         for day in DAY_TYPES for hour in range(24)
-        if any((day, hour, d) in pairs for d in DIRECTIONS)
+        if any((area,day,hour,d) in pairs for d in DIRECTIONS)
     ]
     return {"available": True, "rows": len(rows), "coverage": coverage,
             "source_classes": sorted({r["kind"] for r in rows}),
@@ -128,23 +134,26 @@ def describe(bundle=None) -> dict:
             "note": "Observed counts vs provider estimates retain distinct evidence labels."}
 
 
-def demand_for(day: date, hour: int, *, path=DATA_FILE) -> dict:
+def demand_for(day: date, hour: int, *, path=DATA_FILE, area="salaria") -> dict:
+    if area not in AREAS:
+        raise ValueError("Unknown Rome area")
     bundle = load(path)
     if bundle is None:
         raise ValueError("No hourly traffic CSV imported. Choose synthetic demand or upload measured traffic.")
     day_type = "weekend" if day.weekday() >= 5 else "weekday"
     subset = {r["direction"]: r for r in bundle["observations"]
-              if r["day_type"] == day_type and r["hour"] == hour}
+              if r.get("area","salaria") == area
+              and r["day_type"] == day_type and r["hour"] == hour}
     if not all(direction in subset for direction in DIRECTIONS):
         missing = [name for name in DIRECTIONS if name not in subset]
         raise ValueError(
-            f"No traffic observations for {day_type} at {hour:02d}:00, "
+            f"No traffic observations for {area}, {day_type} at {hour:02d}:00, "
             f"missing: {', '.join(missing)}. No synthetic substitution is applied."
         )
     return {
         "outbound_vph": subset["outbound"]["vehicles_per_hour"],
         "inbound_vph": subset["inbound"]["vehicles_per_hour"],
-        "day_type": day_type,
+        "area":area,"day_type": day_type,
         "hour": hour,
         "evidence_types": sorted({x["kind"] for x in subset.values()}),
         "provenance": {key: {name: subset[key][name] for name in
@@ -153,3 +162,10 @@ def demand_for(day: date, hour: int, *, path=DATA_FILE) -> dict:
         "csv_sha256": bundle["sha256_source_csv"],
         "description": "Externally provided hourly direction counts; not generated from TomTom Routing ETA.",
     }
+
+
+def demand_for_area(day: date, hour: int, area="salaria") -> dict:
+    """Backward-compatible selection; a Salaria CSV never calibrates another zone."""
+    if area=="salaria":
+        return demand_for(day,hour)
+    return demand_for(day,hour,area=area)

@@ -33,7 +33,7 @@ async def lifespan(_app):
     yield
 
 
-app = FastAPI(title="Rome Mobility | Salaria Lab", version="0.3.0", lifespan=lifespan)
+app = FastAPI(title="Rome Mobility | Multi-Area Rome Lab", version="0.4.0", lifespan=lifespan)
 STATIC = ROOT / "app" / "static"
 app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
 
@@ -121,10 +121,12 @@ def observations_status():
 
 
 @app.get("/api/observations/at")
-def observations_at(day: date, hour: int = Query(ge=0, le=23)):
+def observations_at(day: date, hour: int = Query(ge=0, le=23),
+                    area: str = Query(..., description="ID area from /api/sumo/areas")):
+    _area_or_422(area)
     from app.observations import demand_for
     try:
-        return demand_for(day, hour)
+        return demand_for(day, hour, area=area)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -139,10 +141,11 @@ async def import_observations(request: Request):
 
 
 @app.get("/api/signals/inventory")
-def mapped_signals(area: str = Query(default="salaria", pattern="^(salaria|nord_est)$")):
+def mapped_signals(area: str = Query(default="salaria", pattern="^[a-z_]+$")):
+    _area_or_422(area)
     from app.sumo_runner import status, load_network
     from app.signal_inventory import inventory
-    if not (status() if area=="salaria" else status(area))["available"]:
+    if not status(area)["available"]:
         raise HTTPException(status_code=503, detail="SUMO georeferenced OSM network not ready")
     try:
         return inventory(sumo_net=load_network("full",network_path(area)), osm_path=osm_path(area), region=area)
@@ -151,6 +154,7 @@ def mapped_signals(area: str = Query(default="salaria", pattern="^(salaria|nord_
 
 
 class TomTomOnScreen(BaseModel):
+    area: str = "salaria"
     day: date
     hour: int = Field(ge=0, le=23)
     direction: str = Field(pattern="^(outbound|inbound)$")
@@ -176,10 +180,11 @@ def typical_traffic_key_on_screen(request: TomTomOnScreen):
     """Key is provided per request in JSON body and never saved by backend."""
     from app.traffic_reference import get_typical_traffic
     from app.sumo_runner import load_network, status
-    if not status("salaria")["available"]:
-        raise HTTPException(status_code=503, detail="Salaria SUMO network not ready")
+    _area_or_422(request.area)
+    if not status(request.area)["available"]:
+        raise HTTPException(status_code=503, detail="Selected SUMO network is not ready")
     try:
-        info = load_network("full", network_path("salaria"))
+        info = load_network("full", network_path(request.area))
         return get_typical_traffic(
             request.day, request.hour, request.direction,
             network=info, api_key=request.api_key.get_secret_value() if request.api_key else None)
@@ -202,27 +207,37 @@ def typical_route_traffic(day: date, hour: int = Query(ge=0, le=23),
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
+def _area_or_422(area: str) -> str:
+    if area not in AREAS:
+        raise HTTPException(status_code=422, detail=f"Unknown Rome study area: {area}")
+    return area
+
+
 @app.get("/api/sumo/areas")
 def sumo_areas():
     from app.sumo_runner import status
     return {"areas":[{"id":area,"name":definition["name"],
         "bbox":definition["bbox"],"description":definition["description"],
-        "ready":status(area)["available"]} for area, definition in AREAS.items()]}
+        "ready":status(area)["available"],
+        "focus_roads":definition["focus_roads"],
+        "regional":area!="salaria"} for area, definition in AREAS.items()]}
 
 
 @app.get("/api/sumo/status")
-def sumo_status(area: str = Query(default="salaria", pattern="^(salaria|nord_est)$")):
+def sumo_status(area: str = Query(default="salaria", pattern="^[a-z_]+$")):
+    _area_or_422(area)
     from app.sumo_runner import status
     from app.sumo_jobs import latest_setup
-    ready = status() if area=="salaria" else status(area)
-    job = latest_setup() if area=="salaria" else latest_setup(area)
+    ready = status(area)
+    job = latest_setup(area)
     return {**ready, "setup": job, "mode": "ready" if ready["available"] else
             "preparing" if job and job["status"] in {"queued", "running"} else "demo"}
 
 
 @app.get("/api/sumo/network")
 def sumo_network(segment: str = Query(default="full", pattern="^(full|south|north)$"),
-                 area: str = Query(default="salaria", pattern="^(salaria|nord_est)$")):
+                 area: str = Query(default="salaria", pattern="^[a-z_]+$")):
+    _area_or_422(area)
     from app.sumo_runner import load_network
     try:
         return load_network(segment, network_path(area))
@@ -231,10 +246,11 @@ def sumo_network(segment: str = Query(default="full", pattern="^(full|south|nort
 
 
 @app.post("/api/sumo/setup",status_code=202)
-def sumo_setup(area: str = Query(default="salaria", pattern="^(salaria|nord_est)$")):
+def sumo_setup(area: str = Query(default="salaria", pattern="^[a-z_]+$")):
+    _area_or_422(area)
     from app.sumo_jobs import submit
     from app.sumo_runner import status
-    ready=status() if area=="salaria" else status(area)
+    ready=status(area)
     if not ready["netconvert"]:
         raise HTTPException(status_code=503,detail="netconvert unavailable; install SUMO before importing")
     try:
@@ -250,7 +266,7 @@ def _missing_sumo_components(ready: dict) -> str:
     if not ready.get("python_modules"):
         missing.append("librerie Python traci/sumolib")
     if not ready.get("network_ready"):
-        missing.append("rete OSM/SUMO della Salaria")
+        missing.append("rete OSM/SUMO dell’area selezionata")
     return ("SUMO non pronto: manca " + ", ".join(missing)
             + ". Premi «Prepara rete reale SUMO» per scaricare la mappa, "
               "oppure esegui python scripts/bootstrap_sumo.py nel container.")
@@ -258,9 +274,9 @@ def _missing_sumo_components(ready: dict) -> str:
 
 def _ensure_hourly_data(request: SimulationRequest):
     if request.traffic_source == "hourly_counts":
-        from app.observations import demand_for
+        from app.observations import demand_for_area
         try:
-            demand_for(request.day, request.hour)
+            demand_for_area(request.day, request.hour,request.area)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -270,7 +286,7 @@ def sumo_job(request: SimulationRequest):
     _ensure_hourly_data(request)
     from app.sumo_jobs import submit
     from app.sumo_runner import status
-    ready=status() if request.area=="salaria" else status(request.area)
+    ready=status(request.area)
     if not ready["available"]:
         raise HTTPException(status_code=503,detail=_missing_sumo_components(ready))
     try:
@@ -298,7 +314,7 @@ def research_job(design: ResearchRequest):
     _ensure_hourly_data(design.scenario)
     from app.sumo_jobs import submit
     from app.sumo_runner import status
-    ready = status() if design.scenario.area=="salaria" else status(design.scenario.area)
+    ready = status(design.scenario.area)
     if not ready["available"]:
         raise HTTPException(status_code=503, detail=_missing_sumo_components(ready))
     try:
@@ -311,15 +327,15 @@ def research_job(design: ResearchRequest):
 def start_auto_study(request: AutoStudyRequest):
     from app.sumo_runner import status
     from app.sumo_jobs import submit
-    for area in ("salaria",request.scenario.area):
+    for area in (request.scenario.area,):
         if not status(area)["available"]:
             raise HTTPException(status_code=503,detail=f"Prepare SUMO area {area} first")
     if request.scenario.traffic_source=="hourly_counts":
-        from app.observations import demand_for
+        from app.observations import demand_for_area
         missing=[]
         for period in study_periods(request.scenario):
             try:
-                demand_for(date.fromisoformat(period["date"]),period["hour"])
+                demand_for_area(date.fromisoformat(period["date"]),period["hour"],request.scenario.area)
             except ValueError:
                 missing.append(period["id"])
         if missing:

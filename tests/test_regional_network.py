@@ -34,3 +34,20 @@ def test_merging_four_overlapping_osm_tiles_deduplicates_ids():
     assert len(ids)==len(set(ids))
     assert ("node","3") in ids
     assert ("way","21") in ids
+
+
+
+def test_catalog_area_isolation_and_required_observation_area():
+    from app.models import SimulationRequest
+    from app.api import app
+    from fastapi.testclient import TestClient
+    assert len(AREAS)==11
+    assert len({network_path(a) for a in AREAS})==len(AREAS)
+    assert len({osm_path(a) for a in AREAS})==len(AREAS)
+    for name in AREAS:
+        assert SimulationRequest(area=name).area==name
+        assert len(regional_queries(name))==(1 if name=="salaria" else 4)
+    client=TestClient(app)
+    params={"day":"2026-10-09","hour":8}
+    assert client.get("/api/observations/at",params=params).status_code==422
+    assert client.get("/api/observations/at",params={**params,"area":"bad_area"}).status_code==422

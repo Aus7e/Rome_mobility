@@ -54,15 +54,19 @@ def test_rest_upload_and_lookup(monkeypatch,tmp_path):
     query=observations.demand_for
     original_desc=observations.describe
     monkeypatch.setattr(observations,"save_csv",lambda b: save(b,path=path))
-    monkeypatch.setattr(observations,"demand_for",lambda d,h: query(d,h,path=path))
+    monkeypatch.setattr(observations,"demand_for",lambda d,h,*,area: query(d,h,path=path,area=area))
     monkeypatch.setattr(observations,"describe",lambda bundle=None: original_desc(bundle if bundle is not None else observations.load(path)))
     client=TestClient(app)
     assert client.get("/api/observations/status").json()["available"] is False
     assert client.post("/api/observations/import",content=ROWS,
                        headers={"Content-Type":"text/csv"}).status_code==200
-    got=client.get("/api/observations/at",params={"day":"2026-10-09","hour":8})
+    got=client.get("/api/observations/at",params={"day":"2026-10-09","hour":8,"area":"salaria"})
     assert got.status_code==200 and got.json()["inbound_vph"]==1290
-    assert client.get("/api/observations/at",params={"day":"2026-10-09","hour":21}).status_code==404
+    assert client.get("/api/observations/at",
+        params={"day":"2026-10-09","hour":8}).status_code==422
+    assert client.get("/api/observations/at",
+        params={"day":"2026-10-09","hour":8,"area":"not_a_zone"}).status_code==422
+    assert client.get("/api/observations/at",params={"day":"2026-10-09","hour":21,"area":"salaria"}).status_code==404
 
 
 def test_sumo_requires_complete_observed_dataset(monkeypatch):

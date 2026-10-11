@@ -92,7 +92,7 @@ def test_api_explains_missing_sumo_network(monkeypatch):
     from app.api import app
     from app import sumo_runner
 
-    monkeypatch.setattr(sumo_runner, "status", lambda: {
+    monkeypatch.setattr(sumo_runner, "status", lambda area="salaria": {
         "available": False, "installed": True,
         "python_modules": True, "network_ready": False
     })

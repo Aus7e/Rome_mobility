@@ -9,7 +9,7 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
-from app.areas import network_path, osm_path, regional_queries
+from app.areas import AREAS, network_path, osm_path, regional_queries
 import shutil
 import subprocess
 import sys
@@ -63,10 +63,11 @@ def assemble_region(parts: list[bytes]) -> bytes:
     return ET.tostring(merged, encoding="utf-8", xml_declaration=True)
 
 
-def download_regional_osm(client) -> bytes:
+def download_regional_osm(client, area="nord_est") -> bytes:
     parts = []
-    for idx, query in enumerate(regional_queries(), 1):
-        print(f"OSM region: tile {idx}/4", flush=True)
+    queries=regional_queries(area)
+    for idx, query in enumerate(queries,1):
+        print(f"OSM {area}: tile {idx}/{len(queries)}",flush=True)
         payload, _ = download_osm(client, query=query)
         parts.append(payload)
     return assemble_region(parts)
@@ -162,7 +163,7 @@ def main() -> None:
                         help="Download OSM XML but do not run netconvert")
     parser.add_argument("--force-download", action="store_true",
                         help="Download again even when a valid cached OSM file exists")
-    parser.add_argument("--area", choices=["salaria", "nord_est"], default="salaria",
+    parser.add_argument("--area", choices=list(AREAS), default="salaria",
                         help="Separate lightweight corridor and expanded Roma Nord-Est")
     args = parser.parse_args()
     global OSM_FILE, NET_FILE
@@ -184,8 +185,8 @@ def main() -> None:
         timeout = httpx.Timeout(connect=20.0, read=240.0, write=30.0, pool=30.0)
         with httpx.Client(timeout=timeout, follow_redirects=True) as client:
             if args.area == "nord_est":
-                payload = download_regional_osm(client)
-                endpoint = "Four OpenStreetMap Overpass tiles"
+                payload = download_regional_osm(client,args.area)
+                endpoint = "OpenStreetMap Overpass tiled queries for "+args.area
             else:
                 payload, endpoint = download_osm(client)
         # Write only a fully validated payload and replace cache atomically.
