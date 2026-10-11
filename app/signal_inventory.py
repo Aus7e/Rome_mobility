@@ -16,7 +16,7 @@ OSM_PATH = ROOT / "data" / "raw" / "salaria.osm.xml"
 ARCHIVE_PATH = ROOT / "data" / "raw" / "signal_archive_2020.json"
 
 
-def extract_osm_candidates(osm_path=OSM_PATH, axis=None, *, radius_m=130) -> list[dict]:
+def extract_osm_candidates(osm_path=OSM_PATH, axis=None, *, radius_m=130, bbox=None) -> list[dict]:
     if axis is None:
         raise ValueError("Provide verified map-derived road axis")
     if not Path(osm_path).is_file():
@@ -32,8 +32,14 @@ def extract_osm_candidates(osm_path=OSM_PATH, axis=None, *, radius_m=130) -> lis
                 except (KeyError, ValueError):
                     el.clear()
                     continue
+                if bbox is not None:
+                    south,west,north,east=bbox
+                    inside=south <= point[0] <= north and west <= point[1] <= east
+                    if not inside:
+                        el.clear()
+                        continue
                 distance, along = closest_fraction(point, axis)
-                if distance <= radius_m:
+                if bbox is not None or distance <= radius_m:
                     osm_id = str(el.attrib.get("id"))
                     nodes.append({
                         "id": f"osm_node_{osm_id}", "osm_node_id": osm_id,
@@ -85,8 +91,10 @@ def load_archive(path=ARCHIVE_PATH):
 def inventory(*, osm_path=OSM_PATH, archive_path=ARCHIVE_PATH, sumo_net=None, region="salaria"):
     if sumo_net is None or sumo_net.get("source") != "sumo_osm" or not sumo_net.get("geo_valid"):
         raise ValueError("Georeferenced OSM/SUMO network required to audit mapped signals")
-    osm = extract_osm_candidates(osm_path, sumo_net["points"],
-                                radius_m=14000 if region=="nord_est" else 130)
+    from app.areas import AREAS
+    osm = extract_osm_candidates(
+        osm_path, sumo_net["points"],radius_m=130,
+        bbox=AREAS[region]["bbox"] if region!="salaria" else None)
     tls = sumo_net["signals"]
     matches = compare_controllers(osm, tls)
     mapped = {x["osm_id"] for x in matches}
@@ -112,7 +120,8 @@ def inventory(*, osm_path=OSM_PATH, archive_path=ARCHIVE_PATH, sumo_net=None, re
             "osm_unmatched": len(osm) - len(mapped),
             "sumo_unmatched": len(tls) - len(joined),
         },
-        "historical_archive_2020": load_archive(archive_path),
+        "historical_archive_2020": load_archive(archive_path) if region=="salaria" else [],
+        "area":region,
         "limitations": [
             "OSM nodes can represent signal heads/stop lines at one junction, not controller installations.",
             "SUMO controllers and phase timings are inferred by netconvert and not field measured.",
