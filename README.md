@@ -428,3 +428,36 @@ field travel times are still required for a validated real-world claim.
 The hourly observation API now requires an explicit area: 
 GET /api/observations/at?day=2026-10-09&hour=8&area=centro
 Missing or unknown area IDs produce HTTP 422. Legacy CSV data without an area column remains associated with Salaria only, and cannot be reused for unrelated zones.
+
+
+## One-click 500-run optimization for all Rome study zones
+
+The right-side button lets users choose between the selected region
+(500 SUMO runs) and all **already prepared** Rome regions, 500 runs per
+zone. For all eleven networks this means 5,500 separate SUMO simulations.
+The UI displays how many areas are ready and the corresponding total
+before launch. Other areas must first be imported with the Prepare
+SUMO network button; no expensive surprise OpenStreetMap download
+occurs when starting optimization.
+
+A multi-area batch runs its zones sequentially. For each completed zone,
+the final ZIP includes the usual per-area HTML, Markdown, CSV and JSON
+research reports under a separate aree/AREA_ID/ folder. At the ZIP
+root, the overview HTML, summary CSV and JSON manifest show each zone's
+completed run count, TomTom context coverage and any failed zones.
+Failure in one area does not erase other areas' results; all failing
+areas mean a failed study, not a false successful report.
+
+The full batch makes at most four TomTom Routing reference calls per zone
+(two weekday commute periods, two directions) rather than twenty per
+zone. A single-area study keeps up to twenty reference calls. Missing
+provider predictions are explicitly indicated; no route-time ETA is
+converted to volume estimates and the temporary TomTom key is excluded
+from URLs, ZIP exports and job metadata.
+
+Research boundary: these 11 Rome rectangles overlap and are separate
+SUMO road networks, not a connected calibrated citywide model. Scores,
+vehicle counts and queues from distinct zones should never be summed
+or used to rank road performance across different areas. Running
+5,500 SUMO microsimulations can take substantial time, CPU, RAM and
+disk space on a personal machine.

@@ -15,11 +15,12 @@ import io
 import json
 import multiprocessing
 from pathlib import Path
+from typing import Literal
 import statistics
 from zipfile import ZipFile, ZIP_DEFLATED
 from pydantic import BaseModel, Field, SecretStr, model_validator
 from app.models import SimulationRequest
-from app.areas import network_path
+from app.areas import AREAS, network_path
 from app.research import allowed_workers, values_of
 from app.sumo_runner import run_sumo
 from app.traffic_reference import get_typical_traffic
@@ -33,6 +34,8 @@ class AutoStudyRequest(BaseModel):
     scenario: SimulationRequest
     api_key: SecretStr
     workers: int = Field(2, ge=1, le=8)
+    scope: Literal["selected", "all_prepared"] = "selected"
+    resolved_areas: list[str] = Field(default_factory=list, exclude=True)
 
     @model_validator(mode="after")
     def check(self):
@@ -145,15 +148,20 @@ def select_winners(rows, base):
             "training_seeds":seeds[:3],"validation_seeds":seeds[3:]}
 
 
-def _fetch_tomtom(design, progress=None, provider=get_typical_traffic):
+def _fetch_tomtom(design, progress=None, provider=get_typical_traffic, max_periods=None):
     from app.sumo_runner import load_network
     net=load_network("full",network_path(design.scenario.area))
     references=[]
     notes=[]
-    for i,period in enumerate(study_periods(design.scenario)):
+    selected_periods=study_periods(design.scenario)
+    if max_periods is not None:
+        selected_periods=[p for p in selected_periods
+                          if p["id"] in {"weekday_08","weekday_17"}][:max_periods]
+    request_count=len(selected_periods)*2
+    for i,period in enumerate(selected_periods):
         for direction in ("outbound","inbound"):
             if progress:
-                progress(.025*(2*i+(direction=="inbound"))/20,
+                progress(.025*(2*i+(direction=="inbound"))/max(1,request_count),
                          f"TomTom: {period['id']} {direction}")
             try:
                 row=provider(date.fromisoformat(period["date"]),period["hour"],direction,
@@ -188,13 +196,12 @@ def _fetch_tomtom(design, progress=None, provider=get_typical_traffic):
                 for x in matched:
                     x["route_geometry_check"]="DIRECTION_LENGTHS_SIMILAR_NOT_GEO_VERIFIED"
     if not references:
-        raise RuntimeError("TomTom produced no usable hourly reference. "
-                           "Check Routing API permissions before the 500 SUMO runs. "+
-                           (notes[0] if notes else ""))
+        notes.append("No TomTom reference could be obtained for this area. "
+                     "SUMO optimization can continue, but has no external ETA context.")
     return references,notes
 
 
-def run_auto(design, *, runner=_run_one, tomtom=None, net_path=None, progress=None):
+def run_auto(design, *, runner=_run_one, tomtom=None, net_path=None, progress=None, tomtom_max_periods=None):
     """Do not serialize design.api_key, even in errors, logs, or report files."""
     net=Path(net_path or network_path(design.scenario.area))
     if not net.is_file():
@@ -207,7 +214,9 @@ def run_auto(design, *, runner=_run_one, tomtom=None, net_path=None, progress=No
             source_fingerprints[period["id"]]=demand_for_area(
                 date.fromisoformat(period["date"]),period["hour"],design.scenario.area)["csv_sha256"]
     if progress: progress(0,"Retrieving TomTom reference times")
-    references,notes=tomtom if tomtom is not None else _fetch_tomtom(design,progress)
+    references,notes=tomtom if tomtom is not None else _fetch_tomtom(
+        design,progress,max_periods=tomtom_max_periods)
+    provider_requests=4 if tomtom_max_periods==2 else 20
     tasks=plan(design.scenario)
     workers=allowed_workers(design.workers) if runner is _run_one else 1
     rows=[]
@@ -231,7 +240,7 @@ def run_auto(design, *, runner=_run_one, tomtom=None, net_path=None, progress=No
     if hashlib.sha256(net.read_bytes()).hexdigest()!=fingerprint:
         raise RuntimeError("SUMO network was replaced during the experiment")
     if source_fingerprints:
-        from app.observations import demand_for
+        from app.observations import demand_for_area
         for period in study_periods(design.scenario):
             if demand_for_area(date.fromisoformat(period["date"]),period["hour"],design.scenario.area)["csv_sha256"]!=source_fingerprints[period["id"]]:
                 raise RuntimeError("Hourly traffic dataset changed during experiment")
@@ -248,7 +257,7 @@ def run_auto(design, *, runner=_run_one, tomtom=None, net_path=None, progress=No
         f"{offset_only} preserved-plan offset-only adjustments.",
         f"{failures}/500 simulation runs had incomplete trips or no valid signal control.",
         "Best configurations are hypothetical, not real Rome municipal light timings.",
-        "Only controllers with identifiable Salaria approaches are retimed; other roads may be affected.",
+        "Only identified imported vehicle approaches inside the selected zone are tuned.",
         "TomTom estimates cover one area reference corridor, not all OD trips in the selected region.",
         "TomTom Route API predicts historical-typical journey times, NOT hourly vehicle volumes.",
         "TomTom estimates were NOT used to infer demand or directly optimize SUMO light settings.",
@@ -260,12 +269,15 @@ def run_auto(design, *, runner=_run_one, tomtom=None, net_path=None, progress=No
         "schema_version":"rome-auto-500-1","created_at":datetime.now(timezone.utc).isoformat(),
         "evidence_level":"UNCALIBRATED_SUMO_SIMULATION",
         "area":design.scenario.area,
+        "area_name":AREAS[design.scenario.area]["name"],
+        "area_bbox":AREAS[design.scenario.area]["bbox"],
+        "study_scope":design.scope,
         "scenario":design.scenario.model_dump(mode="json"),
         "network_sha256":fingerprint,"observation_fingerprints":source_fingerprints,
         "simulations":len(rows),"workers":workers,
         "periods":study_periods(design.scenario),"policies":policies(),
         "tomtom":references,"tomtom_success":len(references),
-        "tomtom_requested":20,"score_formula":SCORE_DESCRIPTION,
+        "tomtom_requested":provider_requests,"score_formula":SCORE_DESCRIPTION,
         "selection":selection,"runs":rows,"warnings":notes,
         "quality":{"rejected_trials":failures,
                    "drain_timeouts":drain_timeout,
@@ -290,7 +302,7 @@ def report_md(study):
         f"Completed SUMO runs: {study['simulations']}",
         "Design: 10 periods x 10 candidate plans x 5 matched random seeds.",
         f"Training: {study['selection']['training_seeds']}; held-out: {study['selection']['validation_seeds']}",
-        f"TomTom route predictions: {study['tomtom_success']} of 20 attempted",
+        f"TomTom route predictions: {study['tomtom_success']} of {study['tomtom_requested']} attempted",
         f"Runs reaching drain cap: {study['quality']['drain_timeouts']}/500",
         f"Time-program retunings: {study['quality']['total_timing_adjustments']}",
         f"Original-plan offset-only changes: {study['quality']['total_offset_only_adjustments']}",
@@ -311,7 +323,7 @@ def report_md(study):
         "SUMO stops injecting at the requested duration, then continues to drain "
         "in-flight traffic up to the configured drain cap.",
         "", "## TomTom evidence","",
-        "At most 20 contextual TomTom historical-typical route predictions are fetched, "
+        "A bounded set of contextual TomTom historical-typical route predictions is fetched, "
         "not 500. They are not observed vehicle counts, not guaranteed to match "
         "SUMO OD routes, and are not used as the optimizing target.",
         "", "## Warnings and limitations","",
@@ -348,7 +360,7 @@ def report_html(study):
         "<h1>Rome Mobility — 500 automatic SUMO simulations</h1>"
         "<p class='warning'><strong>Simulation only, not a field-validated traffic-light plan.</strong></p>"
         "<p>Area: "+esc(study["area"])+" | Simulations: "+esc(study["simulations"])+
-        " | TomTom references: "+esc(study["tomtom_success"])+"/20 | "
+        " | TomTom references: "+esc(study["tomtom_success"])+"/"+esc(study["tomtom_requested"])+" | "
         "Out-of-sample improvements: "+esc(study["quality"]["accepted_periods"])+"/10</p>"
         "<h2>Experimental timing recommendations</h2><table><tr>"
         "<th>Period</th><th>Policy</th><th>Hold-out delta</th><th>Accepted</th>"

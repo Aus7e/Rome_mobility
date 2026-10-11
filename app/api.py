@@ -325,24 +325,38 @@ def research_job(design: ResearchRequest):
 
 @app.post("/api/auto-study/jobs",status_code=202)
 def start_auto_study(request: AutoStudyRequest):
+    """Freeze the explicit eligible zones at job submission time."""
     from app.sumo_runner import status
     from app.sumo_jobs import submit
-    for area in (request.scenario.area,):
-        if not status(area)["available"]:
-            raise HTTPException(status_code=503,detail=f"Prepare SUMO area {area} first")
+    from app.multi_zone_study import select_study_areas
+
+    readiness={area:status(area)["available"] for area in AREAS}
+    if request.scope=="selected" and not readiness[request.scenario.area]:
+        raise HTTPException(status_code=503,
+            detail=f"Prepare SUMO area {request.scenario.area} first")
+    if request.scope=="all_prepared" and not any(readiness.values()):
+        raise HTTPException(status_code=503,
+            detail="No Rome SUMO area is prepared. Prepare a zone before optimizing.")
+    try:
+        areas=select_study_areas(request.scope,request.scenario.area,readiness)
+    except ValueError as exc:
+        raise HTTPException(status_code=422,detail=str(exc)) from exc
     if request.scenario.traffic_source=="hourly_counts":
         from app.observations import demand_for_area
         missing=[]
-        for period in study_periods(request.scenario):
-            try:
-                demand_for_area(date.fromisoformat(period["date"]),period["hour"],request.scenario.area)
-            except ValueError:
-                missing.append(period["id"])
+        for area in areas:
+            for period in study_periods(request.scenario):
+                try:
+                    demand_for_area(date.fromisoformat(period["date"]),period["hour"],area)
+                except ValueError:
+                    missing.append(area+":"+period["id"])
         if missing:
             raise HTTPException(status_code=422,
-                detail="Missing hourly input traffic for: "+", ".join(missing))
+                detail="Missing area-specific hourly observed data: "+", ".join(missing))
+    # Never trust caller-provided zones, and never put API keys in job metadata.
+    frozen=request.model_copy(update={"resolved_areas":areas})
     try:
-        return submit("auto",request)
+        return submit("auto",frozen)
     except RuntimeError as exc:
         raise HTTPException(status_code=429,detail=str(exc)) from exc
 

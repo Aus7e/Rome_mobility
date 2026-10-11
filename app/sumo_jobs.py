@@ -8,7 +8,8 @@ from uuid import uuid4
 
 from app.models import SimulationRequest
 from app.research import ResearchRequest, run_study
-from app.auto_study import AutoStudyRequest, run_auto, report_zip
+from app.auto_study import AutoStudyRequest, run_auto, report_zip, COUNT
+from app.multi_zone_study import run_area_batch
 from app.network import ROOT
 from app.sumo_runner import run_sumo
 from app.areas import AREAS, network_path
@@ -73,7 +74,10 @@ def submit(kind,request=None):
         if kind=="auto":
             for job in _JOBS.values():
                 if job["kind"]=="auto" and job["status"] in {"queued","running"}:
-                    return {k:v for k,v in job.items() if k!="result"}
+                    if (job.get("scope") == request.scope and
+                            job.get("areas") == request.resolved_areas):
+                        return {k:v for k,v in job.items() if k!="result"}
+                    raise RuntimeError("An automatic study of other zones is already running")
         if kind == "setup":
             for job in _JOBS.values():
                 if (job["kind"] == "setup"
@@ -93,6 +97,9 @@ def submit(kind,request=None):
                     "area": (request or "salaria") if kind=="setup" else
                             request.scenario.area if kind in {"research","auto"} else request.area,
                     "status":"queued",
+                    "scope":request.scope if kind=="auto" else None,
+                    "areas":list(request.resolved_areas) if kind=="auto" else None,
+                    "total_runs":COUNT*len(request.resolved_areas) if kind=="auto" else None,
                     "progress":0.,"message":"Waiting for SUMO worker",
                     "submitted_at":datetime.now(timezone.utc).isoformat()}
     _POOL.submit(_execute,jid,kind,request)
@@ -130,24 +137,48 @@ def _execute(jid,kind,request):
         elif kind=="research":
             data=run_study(request,progress=progress)
         elif kind=="auto":
-            full=run_auto(request,progress=progress)
+            if request.scope=="all_prepared":
+                completed=run_area_batch(request,progress=progress)
+                zipped=completed["download_bytes"]
+                manifest=completed["manifest"]
+                data={
+                    "scope":"all_prepared",
+                    "areas":request.resolved_areas,
+                    "simulations":completed["total_runs"],
+                    "planned_simulations":manifest["planned_simulations"],
+                    "completed_areas":manifest["completed_areas"],
+                    "failed_areas":manifest["failed_areas"],
+                    "zone_results":manifest["zones"],
+                    "tomtom_success":completed["tomtom_success"],
+                    "tomtom_requested":completed["tomtom_requested"],
+                    "quality":{"accepted_periods":completed["accepted_periods"]},
+                    "download_url":"/api/auto-study/reports/"+jid+"/download",
+                    "warnings":manifest["limitations"],
+                }
+            else:
+                full=run_auto(request,progress=progress)
+                zipped=report_zip(full)
+                data={
+                    "scope":"selected","areas":[request.scenario.area],
+                    "simulations":full["simulations"],
+                    "planned_simulations":full["simulations"],
+                    "completed_areas":1,"failed_areas":0,
+                    "tomtom_success":full["tomtom_success"],
+                    "tomtom_requested":full["tomtom_requested"],
+                    "quality":full["quality"],
+                    "decisions":full["selection"]["decisions"],
+                    "download_url":"/api/auto-study/reports/"+jid+"/download",
+                    "warnings":full["warnings"],
+                }
             reports=ROOT/"data"/"reports"
             reports.mkdir(parents=True,exist_ok=True)
             dest=reports/("automatic-"+jid+".zip")
             tmp=dest.with_suffix(".zip.part")
             try:
-                tmp.write_bytes(report_zip(full))
+                tmp.write_bytes(zipped)
                 tmp.replace(dest)
             finally:
                 tmp.unlink(missing_ok=True)
-            data={
-                "simulations":full["simulations"],
-                "tomtom_success":full["tomtom_success"],
-                "quality":full["quality"],
-                "decisions":full["selection"]["decisions"],
-                "download_url":"/api/auto-study/reports/"+jid+"/download",
-                "warnings":full["warnings"],
-            }
         else:
             baseline=request.model_copy(update={"mode":"manual","overrides":{}})
             def first(p,msg):progress(p*.48,"Baseline: "+msg)
@@ -159,4 +190,8 @@ def _execute(jid,kind,request):
                   "note":"SUMO-generated net and demand; zero-offset baseline is not the observed Rome controller plan."}
         _update(jid,status="complete",progress=1.,message="Completed",result=data)
     except Exception as exc:
-        _update(jid,status="failed",message=str(exc)[:1200],progress=1.)
+        message=str(exc)
+        if kind=="auto" and isinstance(request,AutoStudyRequest):
+            token=request.api_key.get_secret_value()
+            if token:message=message.replace(token,"[REDACTED]")
+        _update(jid,status="failed",message=message[:1200],progress=1.)

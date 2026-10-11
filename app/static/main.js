@@ -459,6 +459,7 @@ async function setupSumo(){
     const job=await api("/api/sumo/setup?area="+$("area").value,{method:"POST",body:"{}"});
     await waitForJob(job);await refreshSumoStatus();
     if($("area").value!=="salaria"){await getNetwork();$("runBtn").disabled=false;}
+    loadAreaCatalog().catch(()=>{});
     flash("Rete SUMO costruita da OSM; verifica semafori e OD prima di usare i KPI.");
   }catch(e){flash(e.message,true);}
   finally{$("setupSumoBtn").disabled=false;}
@@ -666,6 +667,17 @@ async function runResearch(){
 }
 /* Right-side research action: key remains only in tab memory.
    Completed reports persist in the Docker data volume without credentials. */
+function updateAutoStudyEstimate(){
+  const count=Object.values(state.areaCatalog||{}).filter(a=>a.ready).length;
+  const multi=$("autoStudyScope").value==="all_prepared";
+  $("autoStudyEstimate").textContent=multi
+    ? count+" zone preparate · "+(500*count).toLocaleString("it-IT")+
+      " simulazioni (500 per zona). Prepara le altre zone prima di avviare."
+    : (state.areaCatalog[$("area").value]?.name||"Zona selezionata")+
+      " · 500 simulazioni SUMO";
+  $("autoStudyBtn").textContent=multi
+    ?"✦ Ottimizza tutte le zone pronte":"✦ Ottimizza · 500 simulazioni";
+}
 let autoJobPolling=false;
 async function pollAutoJob(job){
   if(autoJobPolling)return;
@@ -673,7 +685,8 @@ async function pollAutoJob(job){
   $("autoStudyBtn").disabled=true;
   $("autoStudyDetails").hidden=false;
   $("autoStudyDownload").hidden=true;
-  $("autoStudyTitle").textContent="Ottimizzazione: 500 simulazioni";
+  const total=job.total_runs||500;
+  $("autoStudyTitle").textContent="Ottimizzazione · "+total.toLocaleString("it-IT")+" simulazioni";
   try{
     while(true){
       const snapshot=await api("/api/sumo/jobs/"+encodeURIComponent(job.id));
@@ -683,15 +696,23 @@ async function pollAutoJob(job){
       if(snapshot.status==="failed")throw new Error(snapshot.message||"Studio interrotto");
       if(snapshot.status==="complete"){
         const result=await api("/api/sumo/jobs/"+encodeURIComponent(job.id)+"/result");
-        $("autoStudyTitle").textContent="Studio concluso · 500 run";
-        $("autoStudyMessage").textContent="TomTom "+result.tomtom_success+
-          "/20; miglioramenti su seed separati "+result.quality.accepted_periods+
-          "/10 fasce. Sono risultati simulati e non una taratura reale.";
+        $("autoStudyTitle").textContent="Studio concluso · "+
+          result.simulations.toLocaleString("it-IT")+" run";
+        const multi=result.scope==="all_prepared";
+        $("autoStudyMessage").textContent=multi
+          ? result.completed_areas+"/"+result.areas.length+" zone completate, "+
+            result.failed_areas+" fallite. TomTom "+result.tomtom_success+
+            "/"+result.tomtom_requested+". I risultati delle zone NON si sommano."
+          : "Zona "+result.areas[0]+" · TomTom "+result.tomtom_success+
+            "/"+result.tomtom_requested+" · fasce migliorate "+
+            result.quality.accepted_periods+"/10. Sono risultati simulati.";
         $("autoStudyDownload").href=result.download_url;
         $("autoStudyDownload").hidden=false;
         const anchor=document.createElement("a");
         anchor.href=result.download_url;
-        anchor.download="rome-mobility-500-simulations.zip";
+        anchor.download=result.scope==="all_prepared"
+          ?"rome-mobility-multi-zona-500-per-zona.zip"
+          :"rome-mobility-"+result.areas[0]+"-500-run.zip";
         document.body.append(anchor);anchor.click();anchor.remove();
         break;
       }
@@ -716,12 +737,17 @@ async function runAutoStudy(){
     const key=await showTomTomKeyDialog();
     if(!key){$("autoStudyMessage").textContent="Serve una chiave TomTom Routing.";return;}
     const area=$("area").value;
-    const status=await api("/api/sumo/status?area="+encodeURIComponent(area));
-    if(!status.available)throw new Error("Prepara prima la rete SUMO "+area);
-    // Each area has its own reference corridor and TomTom lookup.
+    const scope=$("autoStudyScope").value;
+    const areasResponse=await api("/api/sumo/areas");
+    state.areaCatalog=Object.fromEntries(areasResponse.areas.map(a=>[a.id,a]));
+    const ready=areasResponse.areas.filter(a=>a.ready);
+    if(scope==="selected" && !state.areaCatalog[area]?.ready)
+      throw new Error("Prepara prima la rete SUMO di "+area);
+    if(scope==="all_prepared" && !ready.length)
+      throw new Error("Non ci sono zone SUMO pronte: preparane almeno una.");
     const job=await api("/api/auto-study/jobs",{
       method:"POST",
-      body:JSON.stringify({scenario:params(),api_key:key,
+      body:JSON.stringify({scenario:params(),scope,api_key:key,
           workers:Number($("researchWorkers").value)||2})
     });
     await pollAutoJob(job);
@@ -877,6 +903,7 @@ async function loadAreaCatalog(){
     picker.append(option);
   }
   if(state.areaCatalog[selected])picker.value=selected;
+  updateAutoStudyEstimate();
 }
 function init(){
   const now=new Date();
@@ -944,6 +971,7 @@ function init(){
   $("compareBtn").addEventListener("click",compare);
   $("researchBtn").addEventListener("click",runResearch);
   $("autoStudyBtn").addEventListener("click",runAutoStudy);
+  $("autoStudyScope").addEventListener("change",updateAutoStudyEstimate);
   restoreAutoStudy();
   loadAreaCatalog().catch(error=>flash("Catalogo aree non disponibile: "+error.message,true));
   $("importObservationsBtn").addEventListener("click",uploadObservedCsv);
