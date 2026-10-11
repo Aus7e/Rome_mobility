@@ -33,7 +33,7 @@ async def lifespan(_app):
     yield
 
 
-app = FastAPI(title="Rome Mobility | Salaria Lab", version="0.3.0", lifespan=lifespan)
+app = FastAPI(title="Rome Mobility | Multi-Area Rome Lab", version="0.4.0", lifespan=lifespan)
 STATIC = ROOT / "app" / "static"
 app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
 
@@ -222,7 +222,8 @@ def sumo_areas():
 
 
 @app.get("/api/sumo/status")
-def sumo_status(area: str = Query(default="salaria", pattern="^(salaria|nord_est)$")):
+def sumo_status(area: str = Query(default="salaria", pattern="^[a-z_]+$")):
+    _area_or_422(area)
     from app.sumo_runner import status
     from app.sumo_jobs import latest_setup
     ready = status(area)
@@ -233,7 +234,8 @@ def sumo_status(area: str = Query(default="salaria", pattern="^(salaria|nord_est
 
 @app.get("/api/sumo/network")
 def sumo_network(segment: str = Query(default="full", pattern="^(full|south|north)$"),
-                 area: str = Query(default="salaria", pattern="^(salaria|nord_est)$")):
+                 area: str = Query(default="salaria", pattern="^[a-z_]+$")):
+    _area_or_422(area)
     from app.sumo_runner import load_network
     try:
         return load_network(segment, network_path(area))
@@ -242,7 +244,8 @@ def sumo_network(segment: str = Query(default="full", pattern="^(full|south|nort
 
 
 @app.post("/api/sumo/setup",status_code=202)
-def sumo_setup(area: str = Query(default="salaria", pattern="^(salaria|nord_est)$")):
+def sumo_setup(area: str = Query(default="salaria", pattern="^[a-z_]+$")):
+    _area_or_422(area)
     from app.sumo_jobs import submit
     from app.sumo_runner import status
     ready=status(area)

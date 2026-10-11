@@ -58,7 +58,7 @@ async function getNetwork(){
   }
   state.network=await api(($("engine").value==="sumo"?"/api/sumo/network?area="+encodeURIComponent(area)+"&segment=":"/api/network?segment=")+encodeURIComponent($("segment").value));
   state.loadedArea=area;
-  $("sourceChip").textContent=$("engine").value==="sumo"?(area==="nord_est"?"Roma Nord-Est · SUMO":"Salaria · SUMO"):state.network.source==="openstreetmap"?"OSM · non verificato":"Demo sintetica";
+  $("sourceChip").textContent=$("engine").value==="sumo"?(state.areaCatalog[area]?.name||"Roma · SUMO"):state.network.source==="openstreetmap"?"OSM · non verificato":"Demo sintetica";
   $("networkNote").textContent=state.network.quality+" · "+Math.round(state.network.length_m/100)/10+" km";
   state.overrides={};
   state.path=worldPath();
@@ -465,7 +465,7 @@ async function setupSumo(){
 }
 async function run(){
   if($("area").value!=="salaria" && state.loadedArea!==$("area").value){
-    flash("Prima prepara la rete Roma Nord-Est dal Laboratorio di ricerca.",true);return;
+    flash("Prepara prima la rete SUMO della zona selezionata.",true);return;
   }
   $("runBtn").disabled=true;flash("Calcolo dei veicoli, delle code e degli stati semaforici…");
   try{
@@ -656,7 +656,7 @@ async function runResearch(){
       " · Risultato teorico, non misurato sul campo.";
     const link=document.createElement("a");
     link.href="/api/research/jobs/"+encodeURIComponent(job.id)+"/download";
-    link.download="salaria-research.zip";
+    link.download="rome-"+$("area").value+"-research.zip";
     document.body.append(link);link.click();link.remove();
     flash("Studio multi-seed completato · ZIP con CSV, JSON e relazione metodologica.");
   }catch(e){
@@ -752,7 +752,7 @@ function saveReport(){
   const report={parameters:params(),network:{source:state.network.source,quality:state.network.quality,length_m:state.network.length_m,signals:state.network.signals},results:state.simulation.metrics,comparison:state.comparison,limitations:state.simulation.limitations};
   const link=document.createElement("a");
   link.href=URL.createObjectURL(new Blob([JSON.stringify(report,null,2)],{type:"application/json"}));
-  link.download="salaria-experiment.json";link.click();setTimeout(()=>URL.revokeObjectURL(link.href),2000);
+  link.download="rome-"+$("area").value+"-experiment.json";link.click();setTimeout(()=>URL.revokeObjectURL(link.href),2000);
 }
 async function refreshOSM(){
   $("osmBtn").disabled=true;flash("Scaricamento OSM da Overpass; potrebbe essere temporaneamente non disponibile.");
