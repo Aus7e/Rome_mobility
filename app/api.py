@@ -331,6 +331,12 @@ def start_auto_study(request: AutoStudyRequest):
     from app.multi_zone_study import select_study_areas
 
     readiness={area:status(area)["available"] for area in AREAS}
+    if request.scope=="selected" and not readiness[request.scenario.area]:
+        raise HTTPException(status_code=503,
+            detail=f"Prepare SUMO area {request.scenario.area} first")
+    if request.scope=="all_prepared" and not any(readiness.values()):
+        raise HTTPException(status_code=503,
+            detail="No Rome SUMO area is prepared. Prepare a zone before optimizing.")
     try:
         areas=select_study_areas(request.scope,request.scenario.area,readiness)
     except ValueError as exc:
