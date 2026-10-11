@@ -202,10 +202,10 @@ def run_auto(design, *, runner=_run_one, tomtom=None, net_path=None, progress=No
     fingerprint=hashlib.sha256(net.read_bytes()).hexdigest()
     source_fingerprints={}
     if design.scenario.traffic_source=="hourly_counts":
-        from app.observations import demand_for
+        from app.observations import demand_for_area
         for period in study_periods(design.scenario):
-            source_fingerprints[period["id"]]=demand_for(
-                date.fromisoformat(period["date"]),period["hour"])["csv_sha256"]
+            source_fingerprints[period["id"]]=demand_for_area(
+                date.fromisoformat(period["date"]),period["hour"],design.scenario.area)["csv_sha256"]
     if progress: progress(0,"Retrieving TomTom reference times")
     references,notes=tomtom if tomtom is not None else _fetch_tomtom(design,progress)
     tasks=plan(design.scenario)
@@ -233,7 +233,7 @@ def run_auto(design, *, runner=_run_one, tomtom=None, net_path=None, progress=No
     if source_fingerprints:
         from app.observations import demand_for
         for period in study_periods(design.scenario):
-            if demand_for(date.fromisoformat(period["date"]),period["hour"])["csv_sha256"]!=source_fingerprints[period["id"]]:
+            if demand_for_area(date.fromisoformat(period["date"]),period["hour"],design.scenario.area)["csv_sha256"]!=source_fingerprints[period["id"]]:
                 raise RuntimeError("Hourly traffic dataset changed during experiment")
     for row in rows:
         row["score"]=model_score(row["metrics"])

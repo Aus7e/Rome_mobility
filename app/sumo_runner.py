@@ -490,8 +490,8 @@ def _run(request: SimulationRequest, *, net_path=NET_FILE, frames=True, progress
         waiting_queue=0
         observed = None
         if request.traffic_source == "hourly_counts":
-            from app.observations import demand_for
-            observed = demand_for(request.day, request.hour)
+            from app.observations import demand_for_area
+            observed = demand_for_area(request.day, request.hour, request.area)
             factor = 1.0
             out_rate = observed["outbound_vph"] / 3600
             in_rate = observed["inbound_vph"] / 3600

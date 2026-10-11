@@ -121,10 +121,12 @@ def observations_status():
 
 
 @app.get("/api/observations/at")
-def observations_at(day: date, hour: int = Query(ge=0, le=23)):
+def observations_at(day: date, hour: int = Query(ge=0, le=23),
+                    area: str = "salaria"):
+    _area_or_422(area)
     from app.observations import demand_for
     try:
-        return demand_for(day, hour)
+        return demand_for(day, hour) if area=="salaria" else demand_for(day, hour,area=area)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -272,9 +274,9 @@ def _missing_sumo_components(ready: dict) -> str:
 
 def _ensure_hourly_data(request: SimulationRequest):
     if request.traffic_source == "hourly_counts":
-        from app.observations import demand_for
+        from app.observations import demand_for_area
         try:
-            demand_for(request.day, request.hour)
+            demand_for_area(request.day, request.hour,request.area)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -329,11 +331,11 @@ def start_auto_study(request: AutoStudyRequest):
         if not status(area)["available"]:
             raise HTTPException(status_code=503,detail=f"Prepare SUMO area {area} first")
     if request.scenario.traffic_source=="hourly_counts":
-        from app.observations import demand_for
+        from app.observations import demand_for_area
         missing=[]
         for period in study_periods(request.scenario):
             try:
-                demand_for(date.fromisoformat(period["date"]),period["hour"])
+                demand_for_area(date.fromisoformat(period["date"]),period["hour"],request.scenario.area)
             except ValueError:
                 missing.append(period["id"])
         if missing:
