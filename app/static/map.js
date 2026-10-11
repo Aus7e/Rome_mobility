@@ -119,12 +119,14 @@ export function updateStreetNetwork(network, inventory) {
   const line=network.points.map(p=>[p[0],p[1]]);
   const isApproximate=network.source==="synthetic_demo";
   const halo=L().polyline(line,{color:isApproximate?"#dda154":"#ffffff",
-    weight:13,opacity:0.88,lineJoin:"round",interactive:false});
+    weight:network.regional?5:13,opacity:0.78,lineJoin:"round",interactive:false});
   const route=L().polyline(line,{color:isApproximate?"#e5a154":"#3478f6",
-    weight:7,opacity:0.96,lineJoin:"round"});
+    weight:network.regional?3:7,opacity:0.96,lineJoin:"round",
+    dashArray:network.regional?"7 7":null});
   roadLayer.addLayer(halo);roadLayer.addLayer(route);
-  route.bindTooltip(isApproximate?"Percorso indicativo, non verificato":"Via Salaria · asse da OSM/SUMO",
-    {sticky:true});
+  route.bindTooltip(network.regional?"Direttrice di riferimento · "+network.focus_road+
+    " (non è il solo percorso simulato)":isApproximate?"Percorso indicativo, non verificato":
+    "Via Salaria · asse da OSM/SUMO",{sticky:true});
   // Sparse cross-street context already exists in SUMO network.
   for(const road of (network.roads || []).slice(0,network.regional?4500:450)){
     if(!road.points || road.points.length<2)continue;
@@ -135,8 +137,17 @@ export function updateStreetNetwork(network, inventory) {
   }
   if(startMarker)roadLayer.removeLayer(startMarker);
   if(endMarker)roadLayer.removeLayer(endMarker);
-  startMarker=L().marker(line[0],{icon:labelIcon("Prati Fiscali","start")}).addTo(roadLayer);
-  endMarker=L().marker(line.at(-1),{icon:labelIcon("GRA","end")}).addTo(roadLayer);
+  if(!network.regional){
+    startMarker=L().marker(line[0],{icon:labelIcon("Prati Fiscali","start")}).addTo(roadLayer);
+    endMarker=L().marker(line.at(-1),{icon:labelIcon("GRA","end")}).addTo(roadLayer);
+  }else{
+    startMarker=null;endMarker=null;
+    if(network.area_bbox)
+      roadLayer.addLayer(L().rectangle(
+        [[network.area_bbox[0],network.area_bbox[1]],
+         [network.area_bbox[2],network.area_bbox[3]]],
+        {color:"#3478f6",weight:2,fillOpacity:0.04,dashArray:"5 7"}));
+  }
   const matching=inventory?.matches||[];
   for(const signal of network.signals||[]) {
     if(!Number.isFinite(signal.lat) || !Number.isFinite(signal.lon))continue;
@@ -154,13 +165,13 @@ export function updateStreetNetwork(network, inventory) {
     markerBySignal.set(signal.id,marker);
   }
   fitStreetRoute();
-  $("routeDistance").textContent=(network.length_m/1000).toFixed(1)+" km";
-  $("routeSource").textContent=network.regional?"Roma Nord-Est · rete OSM e traffico simulato non calibrato":isApproximate?
+  $("routeDistance").textContent=network.regional?"Zona urbana":(network.length_m/1000).toFixed(1)+" km";
+  $("routeSource").textContent=network.regional?(network.area_name||"Roma")+" · strade OSM e traffico simulato, non calibrato":isApproximate?
     "Tracciato indicativo · non è una mappa dei semafori reali":
     "Tracciato OSM · semafori non certificati sul campo";
 }
 
-export function showRegionalStudyExtent(){
+export function showRegionalStudyExtent(bbox,name="Area selezionata"){
   if(!map)return;
   roadLayer.clearLayers();
   signalLayer.clearLayers();
@@ -168,11 +179,12 @@ export function showRegionalStudyExtent(){
   currentNetwork=null;
   carMarkers.clear();
   markerBySignal.clear();
-  const bounds=L().latLngBounds([[41.904,12.460],[42.038,12.616]]);
+  const [south,west,north,east]=bbox||[41.904,12.460,42.038,12.616];
+  const bounds=L().latLngBounds([[south,west],[north,east]]);
   roadLayer.addLayer(L().rectangle(bounds,{color:"#2470d8",weight:2,fillColor:"#4f9cf5",
                                        fillOpacity:0.08,dashArray:"6 5"}));
   map.fitBounds(bounds.pad(0.08),{animate:false});
-  $("routeDistance").textContent="Area estesa";
+  $("routeDistance").textContent=name;
 }
 export function fitStreetRoute(){
   if(!map||!currentNetwork?.points?.length)return;

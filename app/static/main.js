@@ -7,7 +7,7 @@ import { setupStreetMap, updateStreetNetwork, renderStreetFrame, focusStreetSign
 
 const $ = (id) => document.getElementById(id);
 const ids = ["hour","rain","speed","demand","sideTraffic"];
-const state = { viewMode:"map", inventory:null, observations:null, engineChosen:false, promoted:false, network:null, simulation:null, comparison:null, overrides:{}, playing:true, frame:0, lastTick:0, renderer:null, scene:null, controls:null, camera:null, cars:new Map(), lights:[], road:null, path:null, rain:null };
+const state = { areaCatalog:{}, viewMode:"map", inventory:null, observations:null, engineChosen:false, promoted:false, network:null, simulation:null, comparison:null, overrides:{}, playing:true, frame:0, lastTick:0, renderer:null, scene:null, controls:null, camera:null, cars:new Map(), lights:[], road:null, path:null, rain:null };
 const SCALE = 8;
 let tomtomKey = ""; // Volatile key in this browser tab only, never persisted.
 let tomtomResolve = null;
@@ -52,7 +52,7 @@ async function api(url,opts={}){
 }
 async function getNetwork(){
   const area=$("area").value;
-  if(area==="nord_est" && $("engine").value!=="sumo"){
+  if(area!=="salaria" && $("engine").value!=="sumo"){
     $("engine").value="sumo";
     state.engineChosen=true;
   }
@@ -411,19 +411,19 @@ async function refreshSumoStatus(){
   const area=$("area").value;
   const s=await api("/api/sumo/status?area="+area);
   const job=s.setup, preparing=job&&["queued","running"].includes(job.status);
-  $("regionPrepareBtn").hidden=area!=="nord_est"||s.available;
+  $("regionPrepareBtn").hidden=area==="salaria"||s.available;
   $("regionPrepareBtn").disabled=Boolean(preparing);
-  $("regionPrepareBtn").textContent=preparing?"◌ Preparazione rete regionale in corso":"↓ Prepara rete Roma Nord-Est";
+  $("regionPrepareBtn").textContent=preparing?"◌ Preparazione rete regionale in corso":"↓ Prepara "+(state.areaCatalog[area]?.name||"questa zona")+" (rete OSM/SUMO)";
   if(s.available){
-    $("sumoStatus").textContent="● SUMO pronto · "+(area==="nord_est"?"rete regionale":"rete Salaria");
-    if(area==="nord_est" && state.loadedArea!==area && !$("runBtn").disabled){
+    $("sumoStatus").textContent="● SUMO pronto · "+(state.areaCatalog[area]?.name||area);
+    if(area!=="salaria" && state.loadedArea!==area && !$("runBtn").disabled){
       await getNetwork();
       $("runBtn").disabled=false;
-      flash("Rete regionale pronta. Premi Avvia simulazione per generare il traffico di Roma Nord-Est.");
+      flash("Rete dell’area pronta. Premi Avvia simulazione per generare il traffico locale.");
     }
-  }else if(area==="nord_est" && !preparing){
-    $("sumoStatus").textContent="Roma Nord-Est da preparare · apri Laboratorio e premi «Prepara rete estesa»";
-    $("setupSumoBtn").textContent="↓ Prepara rete estesa Roma Nord-Est";
+  }else if(area!=="salaria" && !preparing){
+    $("sumoStatus").textContent="Questa area non è ancora preparata: importa le strade OSM/SUMO";
+    $("setupSumoBtn").textContent="↓ Prepara "+(state.areaCatalog[area]?.name||area);
     $("runBtn").disabled=true;
   }else if(preparing){
     $("sumoStatus").textContent="◌ Preparazione automatica SUMO · "+(job.message||"in corso")+" · "+Math.round(100*job.progress)+"%";
@@ -436,7 +436,7 @@ async function refreshSumoStatus(){
   }
   if(area==="salaria")$("setupSumoBtn").textContent="↻ Riprova preparazione rete SUMO";
   $("setupSumoBtn").disabled=Boolean(preparing);
-  if(area==="nord_est" && !s.available)$("runBtn").disabled=true;
+  if(area!=="salaria" && !s.available)$("runBtn").disabled=true;
   // A usable preview loads immediately; upgrade to real SUMO only once it is ready.
   if(area==="salaria" && s.available && !state.engineChosen && !state.promoted && !$("runBtn").disabled){
     state.promoted=true;
@@ -458,13 +458,13 @@ async function setupSumo(){
   try{
     const job=await api("/api/sumo/setup?area="+$("area").value,{method:"POST",body:"{}"});
     await waitForJob(job);await refreshSumoStatus();
-    if($("area").value==="nord_est"){await getNetwork();$("runBtn").disabled=false;}
+    if($("area").value!=="salaria"){await getNetwork();$("runBtn").disabled=false;}
     flash("Rete SUMO costruita da OSM; verifica semafori e OD prima di usare i KPI.");
   }catch(e){flash(e.message,true);}
   finally{$("setupSumoBtn").disabled=false;}
 }
 async function run(){
-  if($("area").value==="nord_est" && state.loadedArea!=="nord_est"){
+  if($("area").value!=="salaria" && state.loadedArea!==$("area").value){
     flash("Prima prepara la rete Roma Nord-Est dal Laboratorio di ricerca.",true);return;
   }
   $("runBtn").disabled=true;flash("Calcolo dei veicoli, delle code e degli stati semaforici…");
@@ -580,7 +580,7 @@ async function lookupTypicalTraffic(){
     const direction=$("mode").value==="wave_inbound"?"inbound":"outbound";
     const result=await api("/api/traffic/typical",{
       method:"POST",
-      body:JSON.stringify({day:$("day").value,hour:Number($("hour").value),direction,api_key:key})
+      body:JSON.stringify({day:$("day").value,hour:Number($("hour").value),direction,area:$("area").value,api_key:key})
     });
     const m=(result.travel_time_typical_s/60).toFixed(1);
     const free=result.travel_time_freeflow_s==null?"n.d.":(result.travel_time_freeflow_s/60).toFixed(1);
@@ -718,8 +718,7 @@ async function runAutoStudy(){
     const area=$("area").value;
     const status=await api("/api/sumo/status?area="+encodeURIComponent(area));
     if(!status.available)throw new Error("Prepara prima la rete SUMO "+area);
-    const salaria=await api("/api/sumo/status?area=salaria");
-    if(!salaria.available)throw new Error("Rete Salaria necessaria per il riferimento TomTom");
+    // Each area has its own reference corridor and TomTom lookup.
     const job=await api("/api/auto-study/jobs",{
       method:"POST",
       body:JSON.stringify({scenario:params(),api_key:key,
@@ -865,6 +864,20 @@ function setupMapInteractions(){
   // Expose the source distinction where people first see the map.
   setViewMode("map");
 }
+async function loadAreaCatalog(){
+  const list=await api("/api/sumo/areas");
+  const picker=$("area");
+  const selected=picker.value;
+  state.areaCatalog=Object.fromEntries(list.areas.map(area=>[area.id,area]));
+  picker.replaceChildren();
+  for(const area of list.areas){
+    const option=document.createElement("option");
+    option.value=area.id;
+    option.textContent=area.name+(area.ready?" · pronta":"");
+    picker.append(option);
+  }
+  if(state.areaCatalog[selected])picker.value=selected;
+}
 function init(){
   const now=new Date();
   $("day").value=[now.getFullYear(),String(now.getMonth()+1).padStart(2,"0"),String(now.getDate()).padStart(2,"0")].join("-");
@@ -895,10 +908,11 @@ function init(){
   $("setupSumoBtn").addEventListener("click",setupSumo);
   $("regionPrepareBtn").addEventListener("click",setupSumo);
   $("area").addEventListener("change",async()=>{
-    const regional=$("area").value==="nord_est";
-    $("routeAreaLabel").textContent=regional?"Roma Nord-Est · area estesa":"Via Salaria";
-    $("routeStartLabel").textContent=regional?"Roma Nord-Est":"Prati Fiscali, Roma";
-    $("routeEndLabel").textContent=regional?"Salaria · Nomentana · Tiburtina":"Grande Raccordo Anulare";
+    const regional=$("area").value!=="salaria";
+    const chosen=state.areaCatalog[$("area").value]||{};
+    $("routeAreaLabel").textContent=regional?(chosen.name||"Area estesa Roma"):"Via Salaria";
+    $("routeStartLabel").textContent=regional?"Area di studio selezionata":"Prati Fiscali, Roma";
+    $("routeEndLabel").textContent=regional?(chosen.focus_roads||[]).join(" · "):"Grande Raccordo Anulare";
     $("segmentField").hidden=regional;
     $("segment").value="full";
     if(regional){
@@ -906,8 +920,8 @@ function init(){
       state.engineChosen=true;
       state.loadedArea=null;
       $("runBtn").disabled=true;
-      showRegionalStudyExtent();
-      $("routeSource").textContent="Roma Nord-Est: seleziona «Prepara rete estesa» per caricare OSM/SUMO.";
+      showRegionalStudyExtent(chosen.bbox,chosen.name);
+      $("routeSource").textContent="Area selezionata: prepara la rete OSM/SUMO per simulare le strade.";
     }
     try{
       const status=await refreshSumoStatus();
@@ -931,6 +945,7 @@ function init(){
   $("researchBtn").addEventListener("click",runResearch);
   $("autoStudyBtn").addEventListener("click",runAutoStudy);
   restoreAutoStudy();
+  loadAreaCatalog().catch(error=>flash("Catalogo aree non disponibile: "+error.message,true));
   $("importObservationsBtn").addEventListener("click",uploadObservedCsv);
   $("trafficSource").addEventListener("change",async()=>{
     if($("trafficSource").value==="hourly_counts" && $("engine").value!=="sumo"){
