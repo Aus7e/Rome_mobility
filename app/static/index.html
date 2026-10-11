@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f7f9fc">
-  <meta name="description" content="Rome Mobility: esplora la Via Salaria su mappa, simula scenari SUMO e confronta risultati sperimentali.">
-  <title>Rome Mobility — Esplora Via Salaria</title>
+  <meta name="description" content="Rome Mobility: esplora le aree di Roma, prepara reti OSM/SUMO e confronta simulazioni di traffico sperimentali.">
+  <title>Rome Mobility — Traffico delle aree di Roma</title>
   <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
   <link rel="stylesheet" href="/static/style.css">
   <script src="/static/vendor/leaflet/leaflet.js"></script>
@@ -18,9 +18,9 @@
   <header class="topbar">
     <div class="brand" aria-label="Rome Mobility">
       <span class="brand-symbol" aria-hidden="true">R<span>●</span></span>
-      <div><strong>Rome Mobility</strong><small>Salaria Research Lab</small></div>
+      <div><strong>Rome Mobility</strong><small>Roma Traffic Simulation Lab</small></div>
     </div>
-    <div class="top-route"><span class="top-route-dot"></span><span>Via Salaria</span><span class="top-route-arrow">›</span><span>Grande Raccordo Anulare</span></div>
+    <div class="top-route"><span class="top-route-dot"></span><span id="topAreaName">Via Salaria</span><span class="top-route-arrow">›</span><span id="topAreaDetail">Grande Raccordo Anulare</span></div>
     <div class="top-actions">
       <button type="button" id="tomtomHeaderBtn" class="tomtom-header-key">🔑 TomTom API</button>
       <span class="source-pill" id="sourceChip">Anteprima</span>
@@ -33,7 +33,7 @@
       <div class="aside-scroll">
         <div class="sidebar-intro">
           <span class="eyebrow">IL TUO PERCORSO</span>
-          <h1>Esplora il traffico <span>sulla Salaria</span></h1>
+          <h1>Esplora il traffico <span id="sidebarAreaHeading">sulla Salaria</span></h1>
           <p>Scegli quando partire e la strategia semaforica. Noi mostriamo la simulazione sulla mappa.</p>
         </div>
 
@@ -220,8 +220,17 @@
         </div>
         <button id="mobileRunBtn" class="mobile-run" type="button">▶ Simula</button>
         <div class="map-bottom-tools">
+          <details id="zoneExplorer" class="zone-explorer">
+            <summary id="zoneExplorerToggle" class="map-chip">▦ Zone di Roma · caricamento…</summary>
+            <div class="zone-explorer-panel">
+              <strong>Esplora tutte le zone</strong>
+              <p>I confini non sono strade simulate. Blu: zona scelta; verde: rete SUMO pronta; grigio: da preparare.</p>
+              <div id="zoneExplorerList" class="zone-explorer-list"></div>
+              <button id="fitAllZonesBtn" type="button" class="zone-fit-button">Inquadra le 11 zone sulla mappa</button>
+            </div>
+          </details>
           <button type="button" id="signalsToggleBtn" class="map-chip" aria-pressed="true">🚦 Semafori</button>
-          <span class="map-chip route-chip">● Via Salaria</span>
+          <span class="map-chip route-chip" id="mapAreaChip">● Via Salaria · 2D</span>
           <span class="map-chip demo-chip">NON LIVE</span>
         </div>
         <div class="map-tile-status" id="mapTileStatus" hidden></div>
