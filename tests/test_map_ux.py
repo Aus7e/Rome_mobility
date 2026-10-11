@@ -121,3 +121,52 @@ def test_advanced_ui_tracks_distinct_drain_duration():
     assert 'id="drainMax"' in html
     assert 'drain_max_s:+$("drainMax").value*60' in script
     assert "SMALTIMENTO NON COMPLETO" in script
+
+
+def test_rome_2d_explorer_shows_all_zones_and_network_readiness():
+    html=(STATIC/"index.html").read_text()
+    script=(STATIC/"main.js").read_text()
+    map_js=(STATIC/"map.js").read_text()
+    css=(STATIC/"style.css").read_text()
+    for selector in ("zoneExplorer","zoneExplorerToggle","zoneExplorerList",
+                     "fitAllZonesBtn","sidebarAreaHeading","topAreaName",
+                     "topAreaDetail","mapAreaChip"):
+        assert f'id="{selector}"' in html
+    assert "renderZoneExplorer()" in script
+    assert '"/api/sumo/areas"' in script
+    assert 'button.dispatchEvent' not in script
+    assert 'new Event("change",{bubbles:true})' in script
+    assert "area.ready" in script
+    assert "updateRomeZoneOutlines(Object.values(state.areaCatalog),id)" in script
+    assert "function syncAreaPresentation()" in script
+    assert "export function updateRomeZoneOutlines" in map_js
+    assert "export function fitAllRomeZones" in map_js
+    assert "zoneLayer=L().layerGroup().addTo(map)" in map_js
+    assert "interactive:false" in map_js
+    assert ".zone-row.selected" in css
+    assert ".zone-row-dot.pending" in css
+
+
+def test_prepared_regional_sumo_roads_render_under_blue_focus_route():
+    script=(STATIC/"map.js").read_text()
+    start=script.index("export function updateStreetNetwork(")
+    end=script.index("export function showRegionalStudyExtent(",start)
+    drawing=script[start:end]
+    # Old code incorrectly drew road context OVER the highlighted route.
+    assert drawing.index("const roads=(network.roads||[])") < drawing.index("const halo=L().polyline")
+    assert drawing.index("const halo=L().polyline") < drawing.index("roadLayer.addLayer(halo);roadLayer.addLayer(route)")
+    assert 'network.regional?"#4289e8":"#8daeca"' in drawing
+    assert '"#165fde"' in drawing
+    assert 'if(!network.regional)' in drawing
+    assert "startMarker=null;endMarker=null" in drawing
+
+
+def test_unprepared_zone_is_not_painted_as_a_traffic_network():
+    script=(STATIC/"map.js").read_text()
+    outlines=script[script.index("export function updateRomeZoneOutlines"):
+                    script.index("export function updateStreetNetwork")]
+    assert "Boolean(area.ready)" in outlines
+    assert '"#8396ac"' in outlines
+    assert "zoneLayer.addLayer(rect)" in outlines
+    assert "network.roads" not in outlines
+    assert "non sono strade simulate" in (STATIC/"index.html").read_text()

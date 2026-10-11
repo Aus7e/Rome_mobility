@@ -132,9 +132,9 @@ export function updateRomeZoneOutlines(areas, selected) {
     const color=active?"#1b63de":ready?"#118c85":"#8396ac";
     const bounds=[[south,west],[north,east]];
     const rect=L().rectangle(bounds,{
-      color,weight:active?3:1.5,opacity:active?.94:ready?.68:.43,
+      color,weight:active?3:1.5,opacity:active ? 0.94 : ready ? 0.68 : 0.43,
       dashArray:active?null:ready?"7 4":"3 6",
-      fillColor:color,fillOpacity:active?.035:0,
+      fillColor:color,fillOpacity:active ? 0.035 : 0,
       interactive:false,
     });
     zoneLayer.addLayer(rect);
@@ -171,7 +171,7 @@ export function updateStreetNetwork(network, inventory) {
                          Math.max(1.3,(road.width_m||8)/5.5));
     roadLayer.addLayer(L().polyline(road.points,{
       color:network.regional?"#4289e8":"#8daeca",
-      weight:width,opacity:network.regional?.62:.45,interactive:false,
+      weight:width,opacity:network.regional ? 0.62 : 0.45,interactive:false,
       renderer:canvasRenderer,
     }));
   }
