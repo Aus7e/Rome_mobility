@@ -199,7 +199,13 @@
           <button type="button" id="view3DBtn" aria-pressed="false">◈ 3D</button>
         </div>
         <div class="automatic-study-ui">
-          <button class="auto-study-run" id="autoStudyBtn" type="button">✦ Ottimizza · 500 simulazioni</button>
+          <label for="autoStudyScope" class="auto-study-scope-label">Ambito dello studio</label>
+          <select id="autoStudyScope" class="auto-study-scope">
+            <option value="selected">Solo zona selezionata · 500 simulazioni</option>
+            <option value="all_prepared">Tutte le zone preparate · 500 per zona</option>
+          </select>
+          <p id="autoStudyEstimate" class="auto-study-estimate">Zona selezionata · 500 run SUMO</p>
+          <button class="auto-study-run" id="autoStudyBtn" type="button">✦ Avvia ottimizzazione</button>
           <div class="auto-study-status" id="autoStudyDetails" role="status" aria-live="polite" hidden>
             <strong id="autoStudyTitle">Ottimizzazione automatica</strong>
             <div class="auto-study-track"><div id="autoStudyProgress"></div></div>
