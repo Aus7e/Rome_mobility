@@ -3,7 +3,8 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { setupStreetMap, updateStreetNetwork, renderStreetFrame, focusStreetSignal,
          fitStreetRoute, searchRoutePoints, goToSearchResult,
-         invalidateStreetMap, showRegionalStudyExtent } from "./map.js";
+         invalidateStreetMap, showRegionalStudyExtent,
+         updateRomeZoneOutlines, fitAllRomeZones } from "./map.js";
 
 const $ = (id) => document.getElementById(id);
 const ids = ["hour","rain","speed","demand","sideTraffic"];
@@ -437,6 +438,11 @@ async function refreshSumoStatus(){
   if(area==="salaria")$("setupSumoBtn").textContent="↻ Riprova preparazione rete SUMO";
   $("setupSumoBtn").disabled=Boolean(preparing);
   if(area!=="salaria" && !s.available)$("runBtn").disabled=true;
+  // Keep the zone catalogue/overlay up to date after background imports.
+  if(state.areaCatalog[area] &&
+      Boolean(state.areaCatalog[area].ready)!==Boolean(s.available)){
+    loadAreaCatalog().catch(()=>{});
+  }
   // A usable preview loads immediately; upgrade to real SUMO only once it is ready.
   if(area==="salaria" && s.available && !state.engineChosen && !state.promoted && !$("runBtn").disabled){
     state.promoted=true;
@@ -890,6 +896,54 @@ function setupMapInteractions(){
   // Expose the source distinction where people first see the map.
   setViewMode("map");
 }
+function renderZoneExplorer(){
+  const areas=Object.values(state.areaCatalog||{});
+  const ready=areas.filter(a=>a.ready).length;
+  const current=$("area").value;
+  $("zoneExplorerToggle").textContent=
+    "▦ Zone di Roma · "+ready+"/"+areas.length+" pronte";
+  const list=$("zoneExplorerList");
+  list.replaceChildren();
+  for(const area of areas){
+    const selected=area.id===current;
+    const button=document.createElement("button");
+    button.type="button";
+    button.className="zone-row"+(selected?" selected":"");
+    button.setAttribute("aria-current",selected?"true":"false");
+    const dot=document.createElement("span");
+    dot.className="zone-row-dot "+(selected?"selected":area.ready?"ready":"pending");
+    dot.setAttribute("aria-hidden","true");
+    const name=document.createElement("span");
+    name.className="zone-row-name";
+    name.textContent=area.name;
+    const status=document.createElement("small");
+    status.textContent=selected?"Selezionata":area.ready?"Rete pronta":"Da preparare";
+    button.append(dot,name,status);
+    button.addEventListener("click",()=>{
+      if($("area").value!==area.id){
+        $("area").value=area.id;
+        $("area").dispatchEvent(new Event("change",{bubbles:true}));
+      }
+      $("zoneExplorer").open=false;
+    });
+    list.append(button);
+  }
+}
+function syncAreaPresentation(){
+  const id=$("area").value;
+  const area=state.areaCatalog[id];
+  const selected=id!=="salaria";
+  $("sidebarAreaHeading").textContent=selected?"a "+(area?.name||"Roma"):"sulla Salaria";
+  $("topAreaName").textContent=selected?(area?.name||"Roma"):"Via Salaria";
+  $("topAreaDetail").textContent=selected
+    ?area?.ready?"Rete SUMO disponibile":"Rete da preparare"
+    :"Grande Raccordo Anulare";
+  $("mapAreaChip").textContent=selected
+    ?"● "+(area?.name||id)+(area?.ready?" · OSM/SUMO":" · perimetro, non simulata")
+    :"● Via Salaria · OSM/SUMO";
+  updateRomeZoneOutlines(Object.values(state.areaCatalog),id);
+  renderZoneExplorer();
+}
 async function loadAreaCatalog(){
   const list=await api("/api/sumo/areas");
   const picker=$("area");
@@ -903,6 +957,7 @@ async function loadAreaCatalog(){
     picker.append(option);
   }
   if(state.areaCatalog[selected])picker.value=selected;
+  syncAreaPresentation();
   updateAutoStudyEstimate();
 }
 function init(){
@@ -933,8 +988,20 @@ function init(){
     }
   });
   $("setupSumoBtn").addEventListener("click",setupSumo);
+  $("fitAllZonesBtn").addEventListener("click",()=>{
+    setViewMode("map");fitAllRomeZones();
+    $("zoneExplorer").open=false;
+  });
   $("regionPrepareBtn").addEventListener("click",setupSumo);
   $("area").addEventListener("change",async()=>{
+    syncAreaPresentation();
+    updateAutoStudyEstimate();
+    // Do not show the previous zone's run/KPIs when switching areas.
+    state.simulation=null;
+    state.network=null;
+    state.loadedArea=null;
+    $("resultsSheet").classList.remove("has-results");
+    $("completionLabel").textContent="Nessuna simulazione eseguita per questa zona.";
     const regional=$("area").value!=="salaria";
     const chosen=state.areaCatalog[$("area").value]||{};
     $("routeAreaLabel").textContent=regional?(chosen.name||"Area estesa Roma"):"Via Salaria";

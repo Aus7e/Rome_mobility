@@ -286,3 +286,46 @@ input[type=range]{accent-color:var(--blue);width:100%;margin:4px 0;min-height:22
   .auto-study-estimate{font-size:9px;padding:6px}
   .auto-study-scope-label{font-size:10px}
 }
+
+
+/* Rome zone explorer: source-status map overlay, not simulated coverage. */
+.zone-explorer{position:relative;z-index:3;flex-shrink:0}
+.zone-explorer>summary{cursor:pointer;list-style:none;user-select:none}
+.zone-explorer>summary::-webkit-details-marker{display:none}
+.zone-explorer[open]>summary{border-color:#92b7f5;background:#eef4ff}
+.zone-explorer-panel{
+  position:absolute;bottom:calc(100% + 10px);left:0;
+  width:min(300px,78vw);max-height:min(52vh,430px);
+  overflow-y:auto;overscroll-behavior:contain;
+  background:#fff;color:#263d5c;border:1px solid #d6e2f1;
+  border-radius:14px;padding:13px;
+  box-shadow:0 12px 32px rgba(24,50,89,.22);
+  white-space:normal;
+}
+.zone-explorer-panel>strong{font-size:13px;display:block;margin-bottom:4px}
+.zone-explorer-panel>p{font-size:11px;line-height:1.45;color:#667990;margin:3px 0 11px}
+.zone-explorer-list{display:flex;flex-direction:column;gap:4px}
+.zone-row{
+  width:100%;border:1px solid transparent;border-radius:9px;padding:9px 7px;
+  display:grid;grid-template-columns:10px minmax(0,1fr) auto;
+  align-items:center;gap:7px;background:#f7f9fc;
+  text-align:left;color:#304967;cursor:pointer;
+}
+.zone-row:hover,.zone-row:focus-visible{border-color:#9cbae5;background:#edf4ff}
+.zone-row.selected{background:#e9f1ff;border-color:#8cb0f0}
+.zone-row-dot{height:9px;width:9px;border-radius:50%;display:block}
+.zone-row-dot.selected{background:#1b63de}
+.zone-row-dot.ready{background:#118c85}
+.zone-row-dot.pending{background:#a0adbc}
+.zone-row-name{font-size:11px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.zone-row small{font-size:9px;color:#667c94;white-space:nowrap}
+.zone-fit-button{
+  width:100%;border:1px solid #b3c9ea;border-radius:9px;
+  background:#f0f6ff;color:#205bb0;font-weight:700;
+  padding:10px;margin-top:10px;cursor:pointer;font-size:11px;
+}
+.zone-fit-button:hover{background:#e3eeff}
+@media(max-width:810px){
+ .zone-explorer-panel{max-height:36vh;width:min(265px,80vw)}
+ .map-bottom-tools{max-width:86%}
+}

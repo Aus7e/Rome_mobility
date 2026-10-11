@@ -461,3 +461,33 @@ vehicle counts and queues from distinct zones should never be summed
 or used to rank road performance across different areas. Running
 5,500 SUMO microsimulations can take substantial time, CPU, RAM and
 disk space on a personal machine.
+
+
+## Map 2D: explore all Rome zones vs actual SUMO streets
+
+The 2D map now always shows thin boundaries for all **11 catalogued
+Rome research extents**. Use **Zone di Roma** at the bottom left to
+select any zone; the map focuses on it and the standard sidebar
+select/prepare controls update too.
+
+- **Blue outline:** currently selected zone.
+- **Green/teal outline:** another zone with a completed local SUMO
+  road network.
+- **Grey dashed outline:** known zone that has NOT yet been prepared.
+- **Blue roadway lines inside the selected region:** actual imported
+  OSM/SUMO streets, visible once *that* zone's network is prepared.
+- **Thicker reference line:** one sample named corridor, NOT all trips
+  or a representation of the region's entire road system.
+
+The original Salaria has a lighter, corridor-only graph. Preparing
+Centro, EUR, Roma Est, Litorale or another zone downloads and compiles
+a **distinct** OSM/SUMO network (potentially slow on public Overpass).
+Only after this step can its vehicle routes/streets be drawn blue.
+A grey zone boundary is NOT fabricated traffic and does not qualify
+that area for the 500-run multi-zone optimizer.
+
+The region selector and header labels now change with the active
+area. The previous zone's KPI panel is cleared rather than presenting
+stale Salaria results as if they applied to Centro or Ostia.
+Real-world signal timings and live traffic overlays remain unavailable;
+roads on the map are an exploratory simulation only.
